@@ -1,0 +1,26 @@
+{
+	"name": "xcode build server",
+	"version": "0.2",
+	"bspVersion": "2.0",
+	"languages": [
+		"c",
+		"cpp",
+		"objective-c",
+		"objective-cpp",
+		"swift"
+	],
+	"argv": [
+		"/opt/homebrew/bin/xcode-build-server",
+		"-scheme",
+		"AniTV",
+		"-workspace",
+		"/Users/feiranyang/Developer/AniTV/AniTV/AniTV.xcodeproj/project.xcworkspace",
+		"-configuration",
+		"Debug"
+	],
+	"workspace": "/Users/feiranyang/Developer/AniTV/AniTV/AniTV.xcodeproj/project.xcworkspace",
+	"build_root": "/Users/feiranyang/Library/Developer/Xcode/DerivedData/AniTV-ccnburmwxvzqghbrlygobibxbxcj",
+	"scheme": "AniTV",
+	"kind": "xcode",
+	"destination": "platform=tvOS Simulator,id=25DAFDE0-97C1-436B-A3E8-908216D99474"
+}

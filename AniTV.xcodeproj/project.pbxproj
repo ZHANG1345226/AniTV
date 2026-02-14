@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FC702B892F3B95F6007C6113 /* KeychainSwift in Frameworks */ = {isa = PBXBuildFile; productRef = FC702B882F3B95F6007C6113 /* KeychainSwift */; };
+		FC702BB52F3B9734007C6113 /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BB42F3B9734007C6113 /* SDWebImage */; };
+		FC702BB72F3B9734007C6113 /* SDWebImageMapKit in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BB62F3B9734007C6113 /* SDWebImageMapKit */; };
+		FC702BBA2F3B9788007C6113 /* SDWebImageAVIFCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BB92F3B9788007C6113 /* SDWebImageAVIFCoder */; };
+		FC702BBD2F3B97AC007C6113 /* SDWebImageSVGCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BBC2F3B97AC007C6113 /* SDWebImageSVGCoder */; };
+		FC702BC02F3B97F9007C6113 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */; };
+		FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = FC8382742F3CC95100AA6131 /* Kingfisher */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		FC7024E52F3B6571007C6113 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +62,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC702BB52F3B9734007C6113 /* SDWebImage in Frameworks */,
+				FC702BB72F3B9734007C6113 /* SDWebImageMapKit in Frameworks */,
+				FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */,
+				FC702BC02F3B97F9007C6113 /* SDWebImageWebPCoder in Frameworks */,
+				FC702BBA2F3B9788007C6113 /* SDWebImageAVIFCoder in Frameworks */,
+				FC702BBD2F3B97AC007C6113 /* SDWebImageSVGCoder in Frameworks */,
+				FC702B892F3B95F6007C6113 /* KeychainSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +95,7 @@
 				FC7024D72F3B656F007C6113 /* AniTV */,
 				FC7024E72F3B6571007C6113 /* AniTVTests */,
 				FC7024F12F3B6571007C6113 /* AniTVUITests */,
+				FC702B872F3B95F6007C6113 /* Frameworks */,
 				FC7024D62F3B656F007C6113 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +108,13 @@
 				FC7024EE2F3B6571007C6113 /* AniTVUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		FC702B872F3B95F6007C6113 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +137,13 @@
 			);
 			name = AniTV;
 			packageProductDependencies = (
+				FC702B882F3B95F6007C6113 /* KeychainSwift */,
+				FC702BB42F3B9734007C6113 /* SDWebImage */,
+				FC702BB62F3B9734007C6113 /* SDWebImageMapKit */,
+				FC702BB92F3B9788007C6113 /* SDWebImageAVIFCoder */,
+				FC702BBC2F3B97AC007C6113 /* SDWebImageSVGCoder */,
+				FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */,
+				FC8382742F3CC95100AA6131 /* Kingfisher */,
 			);
 			productName = AniTV;
 			productReference = FC7024D52F3B656F007C6113 /* AniTV.app */;
@@ -195,6 +227,14 @@
 			);
 			mainGroup = FC7024CC2F3B656F007C6113;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FC702B862F3B94FF007C6113 /* XCRemoteSwiftPackageReference "keychain-swift" */,
+				FC702BB32F3B9733007C6113 /* XCRemoteSwiftPackageReference "SDWebImage" */,
+				FC702BB82F3B9788007C6113 /* XCRemoteSwiftPackageReference "SDWebImageAVIFCoder" */,
+				FC702BBB2F3B97AC007C6113 /* XCRemoteSwiftPackageReference "SDWebImageSVGCoder" */,
+				FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
+				FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FC7024D62F3B656F007C6113 /* Products */;
 			projectDirPath = "";
@@ -414,7 +454,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Debug;
@@ -443,7 +483,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Release;
@@ -572,6 +612,95 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FC702B862F3B94FF007C6113 /* XCRemoteSwiftPackageReference "keychain-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/evgenyneu/keychain-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
+		FC702BB32F3B9733007C6113 /* XCRemoteSwiftPackageReference "SDWebImage" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImage";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.21.6;
+			};
+		};
+		FC702BB82F3B9788007C6113 /* XCRemoteSwiftPackageReference "SDWebImageAVIFCoder" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImageAVIFCoder";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.0;
+			};
+		};
+		FC702BBB2F3B97AC007C6113 /* XCRemoteSwiftPackageReference "SDWebImageSVGCoder" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImageSVGCoder";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
+		FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/SDWebImageWebPCoder";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.15.0;
+			};
+		};
+		FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/onevcat/Kingfisher";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.6.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FC702B882F3B95F6007C6113 /* KeychainSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702B862F3B94FF007C6113 /* XCRemoteSwiftPackageReference "keychain-swift" */;
+			productName = KeychainSwift;
+		};
+		FC702BB42F3B9734007C6113 /* SDWebImage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702BB32F3B9733007C6113 /* XCRemoteSwiftPackageReference "SDWebImage" */;
+			productName = SDWebImage;
+		};
+		FC702BB62F3B9734007C6113 /* SDWebImageMapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702BB32F3B9733007C6113 /* XCRemoteSwiftPackageReference "SDWebImage" */;
+			productName = SDWebImageMapKit;
+		};
+		FC702BB92F3B9788007C6113 /* SDWebImageAVIFCoder */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702BB82F3B9788007C6113 /* XCRemoteSwiftPackageReference "SDWebImageAVIFCoder" */;
+			productName = SDWebImageAVIFCoder;
+		};
+		FC702BBC2F3B97AC007C6113 /* SDWebImageSVGCoder */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702BBB2F3B97AC007C6113 /* XCRemoteSwiftPackageReference "SDWebImageSVGCoder" */;
+			productName = SDWebImageSVGCoder;
+		};
+		FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */;
+			productName = SDWebImageWebPCoder;
+		};
+		FC8382742F3CC95100AA6131 /* Kingfisher */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */;
+			productName = Kingfisher;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = FC7024CD2F3B656F007C6113 /* Project object */;
 }
