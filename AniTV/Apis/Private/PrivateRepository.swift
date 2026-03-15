@@ -17,7 +17,7 @@ struct PrivateRepository {
         
         // 调用通用请求方法，指定返回类型为 TrendingResponse
         return try await client.request(
-            url:  URL(string: "http://localhost:8080/api/trending")!,
+            url:  URL(string: "http://192.168.1.15:8080/api/trending")!,
             queryItems: []
         )
     }

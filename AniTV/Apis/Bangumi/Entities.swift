@@ -8,11 +8,28 @@
 import Foundation
 
 // MARK: - Root Response
-nonisolated
-struct TrendingResponse: Codable, Sendable {
-    let data: [TrendingSubjectDTO]
+struct BgmResponse<T: Codable & Sendable>: Codable, Sendable {
+    let data: [T]
     let total: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case data, total
+    }
+    
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([T].self, forKey: .data)
+        self.total = try container.decode(Int.self, forKey: .total)
+    }
+    
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(data, forKey: .data)
+        try container.encode(total, forKey: .total)
+    }
 }
+
+typealias TrendingResponse = BgmResponse<TrendingSubjectDTO>
 
 // MARK: - Trending Item
 struct TrendingSubjectDTO: Codable, Identifiable, Sendable {
@@ -34,7 +51,7 @@ struct TrendingSubjectDTO: Codable, Identifiable, Sendable {
     }
     
     // 对应的 Encode 方法（为了满足 Codable）
-    func encode(to encoder: Encoder) throws {
+    nonisolated func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(count, forKey: .count)
         try container.encode(subject, forKey: .subject)
@@ -73,7 +90,7 @@ struct SlimSubjectDTO: Codable, Identifiable, Sendable {
         self.images = try container.decode(SubjectImages.self, forKey: .images)
     }
     
-    func encode(to encoder: Encoder) throws {
+    nonisolated func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
@@ -104,4 +121,62 @@ struct SubjectImages: Codable, Sendable {
     let medium: String
     let small: String
     let grid: String
+}
+
+
+struct BgmEpisodeInfo: Codable, Sendable {
+    let id: Int
+    let subjectId: Int
+    let type: Int
+    let ep: Double
+    let sort: Double
+    let name: String
+    let nameCN: String
+    let duration: String
+    let durationSeconds: Int
+    let airdate: String
+    let comment: Int
+    let desc: String
+    let disc: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, ep, sort, name, duration, airdate, comment, desc, disc
+        case nameCN = "name_cn"
+        case subjectId = "subject_id"
+        case durationSeconds = "duration_seconds"
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.subjectId = try container.decode(Int.self, forKey: .subjectId)
+        self.type = try container.decode(Int.self, forKey: .type)
+        self.ep = try container.decode(Double.self, forKey: .ep)
+        self.sort = try container.decode(Double.self, forKey: .sort)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.nameCN = try container.decode(String.self, forKey: .nameCN)
+        self.duration = try container.decode(String.self, forKey: .duration)
+        self.durationSeconds = try container.decode(Int.self, forKey: .durationSeconds)
+        self.airdate = try container.decode(String.self, forKey: .airdate)
+        self.comment = try container.decode(Int.self, forKey: .comment)
+        self.desc = try container.decode(String.self, forKey: .desc)
+        self.disc = try container.decode(Int.self, forKey: .disc)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(subjectId, forKey: .subjectId)
+        try container.encode(type, forKey: .type)
+        try container.encode(ep, forKey: .ep)
+        try container.encode(sort, forKey: .sort)
+        try container.encode(name, forKey: .name)
+        try container.encode(nameCN, forKey: .nameCN)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+        try container.encode(airdate, forKey: .airdate)
+        try container.encode(comment, forKey: .comment)
+        try container.encode(desc, forKey: .desc)
+        try container.encode(disc, forKey: .disc)
+    }
 }

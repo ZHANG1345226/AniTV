@@ -11,9 +11,9 @@ import Kingfisher
 
 struct AnimeDetailView: View {
     let anime: AnimeSubject // 上一轮定义的 DTO
+    @State private var showingFullInfo = false
     
-    // 模拟的剧集数据 (实际开发中需从 API 获取)
-    let episodes = Array(1...12) 
+    @State private var episodes: [BgmEpisodeInfo] = []
     
     var body: some View {
         ZStack {
@@ -83,21 +83,28 @@ struct AnimeDetailView: View {
                         .padding(.bottom, 10)
                         
                         // 3. 简介 (限制行数)
-                        Text(anime.info) // 或者使用 anime.summary 如果有的话
-                            .font(.body)
-                            .foregroundColor(.gray)
-                            .lineLimit(3)
-                            .frame(maxWidth: 900, alignment: .leading)
+                        Button(action: { self.showingFullInfo = true }) {
+                            Text(anime.info) // 或者使用 anime.summary 如果有的话
+                                .font(.body)
+                                .foregroundColor(.gray)
+                                .lineLimit(3)
+                                .frame(maxWidth: 900, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
                         
                         // 4. 操作按钮组
                         HStack(spacing: 20) {
-                            Button(action: { print("Play Tapped") }) {
+                            Button(action: {
+                                print("Play Tapped")
+     
+                            }) {
                                 Label("开始播放", systemImage: "play.fill")
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
                             }
                             // 2. 修正这里：参数是 (true, in: namespace)
                             .prefersDefaultFocus(true, in: focusNamespace)
+                            .focused($focusedField, equals: "playButton")
                             
                             Button(action: { print("Fav Tapped") }) {
                                 Label("追番", systemImage: "heart")
@@ -119,10 +126,10 @@ struct AnimeDetailView: View {
                             // 第一个元素加 Padding，让它缩进去
                             Spacer().frame(width: 40)
                             
-                            ForEach(episodes, id: \.self) { i in
+                            ForEach(episodes.enumerated(), id: \.element.id) { index, episode in
                                 EpisodeCardView(
-                                    episodeNumber: i,
-                                    title: "Episode Title Placeholder",
+                                    episodeInfo: episode,
+                                    sessionTitle: anime.titleTranslate.zhHans,
                                     stillURL: anime.backdrop // 这里暂时用 backdrop 演示，实际用 still_path
                                 )
                             }
@@ -133,6 +140,34 @@ struct AnimeDetailView: View {
                     }
                 }
             }
+        }
+        .onAppear {
+            focusedField = "playButton"
+        }
+        .task {
+            do {
+                let repo = BangumiRepository()
+                let response = try await repo.getEpisodes(id: anime.id)
+                episodes = response.data
+            } catch {
+                print("Failed to load episodes: \(error)")
+            }
+        }
+        .sheet(isPresented: $showingFullInfo) {
+            VStack(spacing: 30) {
+                Text("简介")
+                    .font(.title.bold())
+                
+                ScrollView {
+                    Text(anime.info)
+                        .font(.body)
+                }
+                
+                Button("关闭") {
+                    self.showingFullInfo = false
+                }
+            }
+            .padding(60)
         }
     }
     
@@ -151,6 +186,56 @@ struct BadgeView: View {
             .padding(.vertical, 4)
             .background(.white.opacity(0.2))
             .cornerRadius(4)
+    }
+}
+
+
+extension SelectorMediaSourceArguments {
+    static var mock: SelectorMediaSourceArguments {
+        let json = #"""
+{
+  "name": "omofun111",
+  "description": "直连，来自omofun动漫视频网，导航：https://enlienli.link/",
+  "iconUrl": "https://enlienli.link/upload/mxprocms/20230707-1/49f4b8a7fd5cbf77ffcfa7a52e755675.gif",
+  "searchConfig": {
+    "searchUrl": "https://enlienli.link/vod/search.html?wd={keyword}",
+    "searchUseOnlyFirstWord": true,
+    "subjectFormatId": "a",
+    "selectorSubjectFormatA": {
+      "selectLists": ".module-card-item>.module-card-item-info>.module-card-item-title>a",
+      "preferShorterName": false
+    },
+    "channelFormatId": "index-grouped",
+    "selectorChannelFormatFlattened": {
+      "selectChannelNames": "div>div>div>div>div>div.module-tab-items-box>.module-tab-item>span",
+      "matchChannelName": "(?!高清线路3)",
+      "selectEpisodeLists": ".module-play-list-content",
+      "selectEpisodesFromList": "a",
+      "selectEpisodeLinksFromList": "",
+      "matchEpisodeSortFromName": "第\\s*(?<ep>.+)\\s*[话集]"
+    },
+    "defaultResolution": "1080P",
+    "onlySupportsPlayers": [],
+    "selectMedia": {
+      "distinguishSubjectName": true,
+      "distinguishChannelName": true
+    },
+    "matchVideo": {
+      "enableNestedUrl": true,
+      "matchNestedUrl": "$^",
+      "matchVideoUrl": "(^http(s)?:\\/\\/(?!.*http).+\\.(mp4|m3u8|flv|mkv))|(url=(?<v>http(s)?:\\/\\/.+\\.(mp4|m3u8|flv|mkv)))|(^http(s)?:\\/\\/(?!.*http).+(sign\\.bytetos|sign\\.byteimg|mcloud\\.139|cloudflarestorage|tos-cn)\\.com(?!.*\\.ts).+(-expires|-signature))|((bilivideo|akamaized|szbdyd)\\.com(?!.*\\.ts))|(\\/video\\/tos\\/alisg\\/)|(\\/video\\/.*mime_type=video)",
+      "cookies": "",
+      "addHeadersToVideo": {
+        "referer": "",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+      }
+    }
+  },
+  "tier": 0
+}
+"""#.data(using: .utf8)!
+        
+        return try! JSONDecoder().decode(SelectorMediaSourceArguments.self, from: json)
     }
 }
 

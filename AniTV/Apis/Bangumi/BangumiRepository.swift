@@ -31,4 +31,23 @@ struct BangumiRepository {
             queryItems: queryItems
         )
     }
+    
+    func getEpisodes(
+        type: Int = 0,
+        limit: Int = 100,
+        offset: Int = 0,
+        id: Int
+    ) async throws -> BgmResponse<BgmEpisodeInfo> {
+        let queryItems = [
+            URLQueryItem(name: "type", value: String(type)),
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "subject_id", value: String(id))
+        ]
+        
+        return try await client.request(
+            url: BangumiAPI.pub.build("v0/episodes"),
+            queryItems: queryItems
+        )
+    }
 }

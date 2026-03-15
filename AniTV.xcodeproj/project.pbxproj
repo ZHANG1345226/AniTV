@@ -13,6 +13,7 @@
 		FC702BBA2F3B9788007C6113 /* SDWebImageAVIFCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BB92F3B9788007C6113 /* SDWebImageAVIFCoder */; };
 		FC702BBD2F3B97AC007C6113 /* SDWebImageSVGCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BBC2F3B97AC007C6113 /* SDWebImageSVGCoder */; };
 		FC702BC02F3B97F9007C6113 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */; };
+		FC772DA72F49890D00FA6E3E /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FC772DA62F49890D00FA6E3E /* SwiftSoup */; };
 		FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = FC8382742F3CC95100AA6131 /* Kingfisher */; };
 /* End PBXBuildFile section */
 
@@ -39,9 +40,22 @@
 		FC7024EE2F3B6571007C6113 /* AniTVUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AniTVUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FC6FD34B2F58789B00F60CD3 /* Exceptions for "AniTV" folder in "AniTV" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FC7024D42F3B656F007C6113 /* AniTV */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		FC7024D72F3B656F007C6113 /* AniTV */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FC6FD34B2F58789B00F60CD3 /* Exceptions for "AniTV" folder in "AniTV" target */,
+			);
 			path = AniTV;
 			sourceTree = "<group>";
 		};
@@ -67,6 +81,7 @@
 				FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */,
 				FC702BC02F3B97F9007C6113 /* SDWebImageWebPCoder in Frameworks */,
 				FC702BBA2F3B9788007C6113 /* SDWebImageAVIFCoder in Frameworks */,
+				FC772DA72F49890D00FA6E3E /* SwiftSoup in Frameworks */,
 				FC702BBD2F3B97AC007C6113 /* SDWebImageSVGCoder in Frameworks */,
 				FC702B892F3B95F6007C6113 /* KeychainSwift in Frameworks */,
 			);
@@ -144,6 +159,7 @@
 				FC702BBC2F3B97AC007C6113 /* SDWebImageSVGCoder */,
 				FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */,
 				FC8382742F3CC95100AA6131 /* Kingfisher */,
+				FC772DA62F49890D00FA6E3E /* SwiftSoup */,
 			);
 			productName = AniTV;
 			productReference = FC7024D52F3B656F007C6113 /* AniTV.app */;
@@ -234,6 +250,7 @@
 				FC702BBB2F3B97AC007C6113 /* XCRemoteSwiftPackageReference "SDWebImageSVGCoder" */,
 				FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
 				FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */,
+				FC772DA52F49890D00FA6E3E /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FC7024D62F3B656F007C6113 /* Products */;
@@ -440,6 +457,7 @@
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AniTV/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -454,7 +472,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Debug;
@@ -469,6 +487,7 @@
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AniTV/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -483,7 +502,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Release;
@@ -654,6 +673,14 @@
 				minimumVersion = 0.15.0;
 			};
 		};
+		FC772DA52F49890D00FA6E3E /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.11.3;
+			};
+		};
 		FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/onevcat/Kingfisher";
@@ -694,6 +721,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */;
 			productName = SDWebImageWebPCoder;
+		};
+		FC772DA62F49890D00FA6E3E /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC772DA52F49890D00FA6E3E /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
 		};
 		FC8382742F3CC95100AA6131 /* Kingfisher */ = {
 			isa = XCSwiftPackageProductDependency;

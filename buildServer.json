@@ -10,13 +10,7 @@
 		"swift"
 	],
 	"argv": [
-		"/opt/homebrew/bin/xcode-build-server",
-		"-scheme",
-		"AniTV",
-		"-workspace",
-		"/Users/feiranyang/Developer/AniTV/AniTV/AniTV.xcodeproj/project.xcworkspace",
-		"-configuration",
-		"Debug"
+		"/opt/homebrew/bin/xcode-build-server"
 	],
 	"workspace": "/Users/feiranyang/Developer/AniTV/AniTV/AniTV.xcodeproj/project.xcworkspace",
 	"build_root": "/Users/feiranyang/Library/Developer/Xcode/DerivedData/AniTV-ccnburmwxvzqghbrlygobibxbxcj",
