@@ -143,7 +143,10 @@ class DefaultSelectorMediaSourceEngine: SelectorMediaSourceEngine {
 
     // The following `select` methods will use the placeholder logic from SelectorSubjectFormat.swift and SelectorChannelFormat.swift
     func selectSubjects(document: HTMLDocument, config: SelectorSearchConfig) -> [WebSearchSubjectInfo]? {
-        let subjectFormatInstance = SelectorSubjectFormatA() 
+        var subjectFormatInstance: SelectorSubjectFormat = SelectorSubjectFormatA()
+        if(config.subjectFormatId.value == "indexed"){
+            subjectFormatInstance = SelectorSubjectFormatIndexed()
+        }
         return subjectFormatInstance.select(document: document, baseUrl: config.finalBaseUrl, config: config.selectorSubjectFormatA)
     }
 

@@ -179,4 +179,20 @@ struct BgmEpisodeInfo: Codable, Sendable {
         try container.encode(desc, forKey: .desc)
         try container.encode(disc, forKey: .disc)
     }
+
+    init(id: Int, subjectId: Int, type: Int, ep: Double, sort: Double, name: String, nameCN: String, duration: String, durationSeconds: Int, airdate: String, comment: Int, desc: String, disc: Int) {
+        self.id = id
+        self.subjectId = subjectId
+        self.type = type
+        self.ep = ep
+        self.sort = sort
+        self.name = name
+        self.nameCN = nameCN
+        self.duration = duration
+        self.durationSeconds = durationSeconds
+        self.airdate = airdate
+        self.comment = comment
+        self.desc = desc
+        self.disc = disc
+    }
 }

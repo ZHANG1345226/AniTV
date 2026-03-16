@@ -12,6 +12,10 @@ import AVKit
 struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
     @State private var isLoading = true
+    @State private var showInfoPanel = true
+    
+    // 用来控制选集面板里的焦点
+    @FocusState private var isPanelFocused: Bool
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
@@ -22,8 +26,49 @@ struct AnimePlayerContainerView: View {
 
     var body: some View {
         ZStack {
-            VideoPlayer(player: player)
+            AdvancedVideoPlayer(player: player, title:sessionTitle, sort: Int(episodeInfo.sort), showInfoPanel: $showInfoPanel)
                 .ignoresSafeArea()
+                // 当处于播放状态下，可以通过方向键（比如向上）唤出面板
+                .onMoveCommand { direction in
+                    if direction == .up && !showInfoPanel {
+                        withAnimation(.easeInOut) {
+                            showInfoPanel = true
+                            isPanelFocused = true
+                        }
+                    } else if direction == .down && showInfoPanel {
+                        withAnimation(.easeInOut) {
+                            showInfoPanel = false
+                            isPanelFocused = false
+                        }
+                    }
+                }
+                .onTapGesture {
+                    withAnimation(.easeInOut) {
+                        showInfoPanel.toggle()
+                        isPanelFocused = showInfoPanel
+                    }
+                }
+            
+            if showInfoPanel {
+                VStack {
+                    AniTVCustomDropdownView(
+                        title: sessionTitle,
+                        sort: Int(episodeInfo.sort),
+                        onClose: {
+                            withAnimation(.easeInOut) {
+                                showInfoPanel = false
+                                isPanelFocused = false
+                            }
+                        }
+                    )
+                    // 绑定焦点
+                    .focused($isPanelFocused)
+                    
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
+            }
             
             if isLoading {
                 VStack(spacing: 20) {
@@ -39,6 +84,13 @@ struct AnimePlayerContainerView: View {
         }
         .onAppear {
             fetchAndPlayStream()
+            // 默认显示面板时，尝试让面板获取焦点
+            if showInfoPanel {
+                // 等待视图完全渲染出来后再给焦点，避免获取不到
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isPanelFocused = true
+                }
+            }
         }
         .onDisappear {
             // 退出时清理资源和监听器
@@ -51,7 +103,10 @@ struct AnimePlayerContainerView: View {
     
     private func fetchAndPlayStream() {
         Task { @MainActor in
-            guard let url = await doFetch() else {
+//            guard let url = await doFetch() else {
+//                return
+//            }
+            guard let url = URL(string:"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8") else{
                 return
             }
             
@@ -120,19 +175,41 @@ struct AnimePlayerContainerView: View {
         
         // 2. 设置副标题或简介 (例如："第 1 集")
         let descItem = AVMutableMetadataItem()
-        descItem.identifier = .commonIdentifierDescription
-        descItem.value = episodeInfo.desc as NSString // 结合你传入的 sort 变量
+        descItem.identifier = .commonIdentifierCreationDate
+        descItem.value =  sessionTitle as NSString // 结合你传入的 sort 变量
         descItem.extendedLanguageTag = "und"
         metadata.append(descItem)
-        
-        // 3. 设置流派/分类 (显示在标题上方的小字，例如："AniTV 播放器")
-        let genreItem = AVMutableMetadataItem()
-        genreItem.identifier = .quickTimeMetadataAlbum
-        genreItem.value = sessionTitle as NSString
-        genreItem.extendedLanguageTag = "und"
-        metadata.append(genreItem)
+//        
+//        // 3. 设置流派/分类 (显示在标题上方的小字，例如："AniTV 播放器")
+//        let genreItem = AVMutableMetadataItem()
+//        genreItem.identifier = .quickTimeMetadataAlbum
+//        genreItem.value = sessionTitle as NSString
+//        genreItem.extendedLanguageTag = "und"
+//        metadata.append(genreItem)
         
         return metadata
     }
     
+}
+
+#Preview {
+    AnimePlayerContainerView(
+        episodeInfo: BgmEpisodeInfo(
+            id: 1,
+            subjectId: 1,
+            type: 1,
+            ep: 1.0,
+            sort: 1.0,
+            name: "test",
+            nameCN: "test",
+            duration: "test",
+            durationSeconds: 0,
+            airdate: "test",
+            comment: 0,
+            desc: "test",
+            disc: 0
+        ),
+        sessionTitle: "test"
+    )
+    .zIndex(0)
 }

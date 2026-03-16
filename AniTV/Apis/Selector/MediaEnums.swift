@@ -14,11 +14,11 @@ enum Resolution: String, Codable, CaseIterable {
 }
 
 enum SubtitleLanguage: String, Codable, CaseIterable {
-    case chineseSimplified = "ChineseSimplified"
-    case chineseTraditional = "ChineseTraditional"
-    case english = "English"
-    case japanese = "Japanese"
-    case unspecified = "Unspecified"
+    case chineseSimplified = "CHS"
+    case chineseTraditional = "CHT"
+    case english = "EN"
+    case japanese = "JA"
+    case unspecified = "UND"
 
     var id: String { self.rawValue }
 }
