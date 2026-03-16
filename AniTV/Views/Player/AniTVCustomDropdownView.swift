@@ -12,7 +12,6 @@ import SwiftUI
 struct AniTVCustomDropdownView: View {
     let title: String
     let sort: Int
-    var onClose: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -29,7 +28,6 @@ struct AniTVCustomDropdownView: View {
                     ForEach(1...12, id: \.self) { episode in
                         Button(action: {
                             print("切换到第 \(episode) 集")
-                            onClose() // 切换选集后关闭面板
                         }) {
                             Text("第 \(episode) 集")
                                 .frame(width: 150, height: 80)
@@ -46,9 +44,5 @@ struct AniTVCustomDropdownView: View {
             Color.black.opacity(0.8)
                 .edgesIgnoringSafeArea(.top)
         )
-        // 支持遥控器 Menu 键返回
-        .onExitCommand {
-            onClose()
-        }
     }
 }

@@ -12,7 +12,7 @@ import AVKit
 struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
     @State private var isLoading = true
-    @State private var showInfoPanel = true
+    @State private var showInfoPanel = false
     
     // 用来控制选集面板里的焦点
     @FocusState private var isPanelFocused: Bool
@@ -28,47 +28,6 @@ struct AnimePlayerContainerView: View {
         ZStack {
             AdvancedVideoPlayer(player: player, title:sessionTitle, sort: Int(episodeInfo.sort), showInfoPanel: $showInfoPanel)
                 .ignoresSafeArea()
-                // 当处于播放状态下，可以通过方向键（比如向上）唤出面板
-                .onMoveCommand { direction in
-                    if direction == .up && !showInfoPanel {
-                        withAnimation(.easeInOut) {
-                            showInfoPanel = true
-                            isPanelFocused = true
-                        }
-                    } else if direction == .down && showInfoPanel {
-                        withAnimation(.easeInOut) {
-                            showInfoPanel = false
-                            isPanelFocused = false
-                        }
-                    }
-                }
-                .onTapGesture {
-                    withAnimation(.easeInOut) {
-                        showInfoPanel.toggle()
-                        isPanelFocused = showInfoPanel
-                    }
-                }
-            
-            if showInfoPanel {
-                VStack {
-                    AniTVCustomDropdownView(
-                        title: sessionTitle,
-                        sort: Int(episodeInfo.sort),
-                        onClose: {
-                            withAnimation(.easeInOut) {
-                                showInfoPanel = false
-                                isPanelFocused = false
-                            }
-                        }
-                    )
-                    // 绑定焦点
-                    .focused($isPanelFocused)
-                    
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(1)
-            }
             
             if isLoading {
                 VStack(spacing: 20) {
@@ -174,18 +133,25 @@ struct AnimePlayerContainerView: View {
         metadata.append(titleItem)
         
         // 2. 设置副标题或简介 (例如："第 1 集")
+        let subtitle = AVMutableMetadataItem()
+        subtitle.identifier = .commonIdentifierCreationDate
+        subtitle.value =  "\(sessionTitle) 第 \(Int(episodeInfo.ep)) 集" as NSString // 结合你传入的 sort 变量
+        subtitle.extendedLanguageTag = "und"
+        metadata.append(subtitle)
+        
+        // 2. 设置副标题或简介 (例如："第 1 集")
         let descItem = AVMutableMetadataItem()
-        descItem.identifier = .commonIdentifierCreationDate
-        descItem.value =  sessionTitle as NSString // 结合你传入的 sort 变量
+        descItem.identifier = .commonIdentifierDescription
+        descItem.value =  episodeInfo.desc as NSString // 结合你传入的 sort 变量
         descItem.extendedLanguageTag = "und"
         metadata.append(descItem)
-//        
-//        // 3. 设置流派/分类 (显示在标题上方的小字，例如："AniTV 播放器")
-//        let genreItem = AVMutableMetadataItem()
-//        genreItem.identifier = .quickTimeMetadataAlbum
-//        genreItem.value = sessionTitle as NSString
-//        genreItem.extendedLanguageTag = "und"
-//        metadata.append(genreItem)
+        
+        // 3. 设置流派/分类 (显示在标题上方的小字，例如："AniTV 播放器")
+        let genreItem = AVMutableMetadataItem()
+        genreItem.identifier = .quickTimeMetadataAlbum
+        genreItem.value = sessionTitle as NSString
+        genreItem.extendedLanguageTag = "und"
+        metadata.append(genreItem)
         
         return metadata
     }
