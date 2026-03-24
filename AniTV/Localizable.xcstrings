@@ -1,0 +1,87 @@
+{
+  "sourceLanguage" : "zh-Hans",
+  "strings" : {
+    "·" : {
+
+    },
+    "#%lld" : {
+
+    },
+    "%lld 人评" : {
+
+    },
+    "|" : {
+
+    },
+    "Add Item" : {
+
+    },
+    "Item at %@" : {
+
+    },
+    "New Episode Every %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每%@更新"
+          }
+        }
+      }
+    },
+    "nextUp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接下来"
+          }
+        }
+      }
+    },
+    "Select an item" : {
+
+    },
+    "关闭" : {
+
+    },
+    "剧集列表" : {
+
+    },
+    "劇場版" : {
+
+    },
+    "开始播放" : {
+
+    },
+    "当前播放：第 %lld 集" : {
+
+    },
+    "新番組" : {
+
+    },
+    "暂无推荐内容" : {
+
+    },
+    "神作" : {
+
+    },
+    "第 %lld 话" : {
+
+    },
+    "第 %lld 集" : {
+
+    },
+    "简介" : {
+
+    },
+    "评分 %@" : {
+
+    },
+    "追番" : {
+
+    }
+  },
+  "version" : "1.1"
+}
