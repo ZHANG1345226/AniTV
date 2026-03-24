@@ -260,13 +260,22 @@ class TVOSMediaResolver: NSObject {
         
         let userScript = userScriptType.init(source: injectionScript, injectionTime: 0, forMainFrameOnly: false)
         
-        if let typedController = contentController as? PrivateWKUserContentController {
-            typedController.addUserScript(userScript as AnyObject)
-            typedController.addScriptMessageHandler(self, name: "AniTVIntercept")
-            print("✅ 4. JS 劫持脚本注入成功")
-        } else {
-            print("❌ ContentController 协议转换失败")
+        let addUserScriptSelector = Selector(("addUserScript:"))
+        let addMessageHandlerSelector = Selector(("addScriptMessageHandler:name:"))
+
+        guard contentController.responds(to: addUserScriptSelector) else {
+            print("❌ userContentController 不响应 addUserScript:")
+            return
         }
+
+        guard contentController.responds(to: addMessageHandlerSelector) else {
+            print("❌ userContentController 不响应 addScriptMessageHandler:name:")
+            return
+        }
+
+        _ = contentController.perform(addUserScriptSelector, with: userScript)
+        _ = contentController.perform(addMessageHandlerSelector, with: self, with: "AniTVIntercept")
+        print("✅ 4. JS 劫持脚本注入成功")
         
         // 6. 配置属性
         config.setValue(true, forKey: "allowsInlineMediaPlayback")
