@@ -11,11 +11,8 @@ import AVKit
 
 struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
+    @State private var videoSources: [VideoSource] = []
     @State private var isLoading = true
-    @State private var showInfoPanel = false
-    
-    // 用来控制选集面板里的焦点
-    @FocusState private var isPanelFocused: Bool
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
@@ -26,7 +23,7 @@ struct AnimePlayerContainerView: View {
 
     var body: some View {
         ZStack {
-            AdvancedVideoPlayer(player: player, title:sessionTitle, sort: Int(episodeInfo.sort), showInfoPanel: $showInfoPanel)
+            AdvancedVideoPlayer(player: player, title:sessionTitle, sort: Int(episodeInfo.sort), availableSources: videoSources)
                 .ignoresSafeArea()
             
             if isLoading {
@@ -42,14 +39,7 @@ struct AnimePlayerContainerView: View {
             }
         }
         .onAppear {
-            fetchAndPlayStream()
-            // 默认显示面板时，尝试让面板获取焦点
-            if showInfoPanel {
-                // 等待视图完全渲染出来后再给焦点，避免获取不到
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isPanelFocused = true
-                }
-            }
+            fetchStream()
         }
         .onDisappear {
             // 退出时清理资源和监听器
@@ -60,39 +50,42 @@ struct AnimePlayerContainerView: View {
         }
     }
     
-    private func fetchAndPlayStream() {
-        Task { @MainActor in
-//            guard let url = await doFetch() else {
-//                return
-//            }
-            guard let url = URL(string:"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8") else{
-                return
-            }
-            
-            let playerItem = AVPlayerItem(url: url)
-            playerItem.externalMetadata = createMetadata()
+    private func onSwitch(resource: VideoResource){
+        let playerItem = AVPlayerItem(url: URL(string: resource.url)!)
+        playerItem.externalMetadata = createMetadata()
 
-            // 💥 2. 把返回的监听器赋值给 State 变量
-            statusObservation = playerItem.observe(\.status, options: [.new, .initial]) { item, _ in
-                // 因为是异步回调，确保在主线程打印和处理
-                DispatchQueue.main.async {
-                    if item.status == .failed {
-                        print("❌ 播放失败: \(String(describing: item.error?.localizedDescription))")
-                        if let error = item.error as NSError? {
-                            print("❌ 详细错误信息: \(error.userInfo)")
-                        }
-                        text = "播放失败"
-                    } else if item.status == .readyToPlay {
-                        print("✅ 准备就绪，可以播放")
-                        isLoading = false
-                    } else if item.status == .unknown {
-                        print("⏳ 状态未知，正在缓冲...")
+        // 💥 2. 把返回的监听器赋值给 State 变量
+        statusObservation = playerItem.observe(\.status, options: [.new, .initial]) { item, _ in
+            // 因为是异步回调，确保在主线程打印和处理
+            DispatchQueue.main.async {
+                if item.status == .failed {
+                    print("❌ 播放失败: \(String(describing: item.error?.localizedDescription))")
+                    if let error = item.error as NSError? {
+                        print("❌ 详细错误信息: \(error.userInfo)")
                     }
+                    text = "播放失败"
+                } else if item.status == .readyToPlay {
+                    print("✅ 准备就绪，可以播放")
+                    isLoading = false
+                } else if item.status == .unknown {
+                    print("⏳ 状态未知，正在缓冲...")
                 }
             }
+        }
 
-            player.replaceCurrentItem(with: playerItem)
-            player.play()
+        player.replaceCurrentItem(with: playerItem)
+        player.play()
+    }
+    
+    private func fetchStream() {
+        Task { @MainActor in
+            await doFetch()
+//            guard let url =  else {
+//                return
+//            }
+
+            
+            
         }
     }
 
@@ -106,6 +99,7 @@ struct AnimePlayerContainerView: View {
         let resolver = TVOSMediaResolver()
         
         print(result)
+        var index = 0;
         for r in result{
             print("解析地址: \(r.media.originalUrl)")
             do {
@@ -113,12 +107,14 @@ struct AnimePlayerContainerView: View {
                 print("🎉 最终 m3u8 直链: \(link.m3u8Url)")
                 print("📋 请求头: \(link.headers)")
                 print("🍪 Cookies: \(link.cookieString)")
-                return URL(string:link.m3u8Url)
+//                return URL(string:link.m3u8Url)
+                videoSources.append(VideoSource(sourceName: "\(index)", resources: [VideoResource(resourceName: "\(index)", url: link.m3u8Url, headers: link.headers)]))
+                index+=1
             }catch {
                 print("❌ 解析失败或超时: \(error.localizedDescription)")
             }
         }
-        text = "解析失败：没有找到对应的番剧\(sessionTitle),\(episodeInfo.sort),\(episodeInfo.ep)"
+//        text = "解析失败：没有找到对应的番剧\(sessionTitle),\(episodeInfo.sort),\(episodeInfo.ep)"
         return nil
     }
     
