@@ -23,23 +23,32 @@ struct AnimePlayerContainerView: View {
 
     var body: some View {
         ZStack {
-            AdvancedVideoPlayer(player: player, title:sessionTitle, sort: Int(episodeInfo.sort), availableSources: videoSources)
+            AdvancedVideoPlayer(
+                player: player,
+                title: sessionTitle,
+                sort: Int(episodeInfo.sort),
+                availableSources: videoSources,
+                onSourceSelected: onSwitch(resource:)
+            )
+                .id(sourceMenuIdentity)
                 .ignoresSafeArea()
             
-            if isLoading {
-                VStack(spacing: 20) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(1.5)
-                    Text(text)
-                        .foregroundColor(.gray)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-            }
+//            if isLoading {
+//                VStack(spacing: 20) {
+//                    ProgressView()
+//                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+//                        .scaleEffect(1.5)
+//                    Text(text)
+//                        .foregroundColor(.gray)
+//                }
+//                .frame(maxWidth: .infinity, maxHeight: .infinity)
+//                .background(Color.black)
+//            }
         }
         .onAppear {
-            fetchStream()
+            Task { @MainActor in
+                await doFetch()
+            }
         }
         .onDisappear {
             // 退出时清理资源和监听器
@@ -51,70 +60,66 @@ struct AnimePlayerContainerView: View {
     }
     
     private func onSwitch(resource: VideoResource){
-        let playerItem = AVPlayerItem(url: URL(string: resource.url)!)
-        playerItem.externalMetadata = createMetadata()
-
-        // 💥 2. 把返回的监听器赋值给 State 变量
-        statusObservation = playerItem.observe(\.status, options: [.new, .initial]) { item, _ in
-            // 因为是异步回调，确保在主线程打印和处理
-            DispatchQueue.main.async {
-                if item.status == .failed {
-                    print("❌ 播放失败: \(String(describing: item.error?.localizedDescription))")
-                    if let error = item.error as NSError? {
-                        print("❌ 详细错误信息: \(error.userInfo)")
+        Task { @MainActor in
+            let resolver = TVOSMediaResolver()
+            print("解析地址: \(resource.url)")
+            var link: ExtractionResult
+            do {
+                link = try await resolver.resolve(pageUrl: resource.url, config: resource.matchConfig)
+                print("🎉 最终 m3u8 直链: \(link.m3u8Url)")
+                print("📋 请求头: \(link.headers)")
+                print("🍪 Cookies: \(link.cookieString)")
+            }catch {
+                print("❌ 解析失败或超时: \(error.localizedDescription)")
+                return
+            }
+                        
+            
+            let playerItem = AVPlayerItem(url: URL(string: link.m3u8Url)!)
+            playerItem.externalMetadata = createMetadata()
+            
+            // 💥 2. 把返回的监听器赋值给 State 变量
+            statusObservation = playerItem.observe(\.status, options: [.new, .initial]) { item, _ in
+                // 因为是异步回调，确保在主线程打印和处理
+                DispatchQueue.main.async {
+                    if item.status == .failed {
+                        print("❌ 播放失败: \(String(describing: item.error?.localizedDescription))")
+                        if let error = item.error as NSError? {
+                            print("❌ 详细错误信息: \(error.userInfo)")
+                        }
+                        text = "播放失败"
+                    } else if item.status == .readyToPlay {
+                        print("✅ 准备就绪，可以播放")
+                        isLoading = false
+                    } else if item.status == .unknown {
+                        print("⏳ 状态未知，正在缓冲...")
                     }
-                    text = "播放失败"
-                } else if item.status == .readyToPlay {
-                    print("✅ 准备就绪，可以播放")
-                    isLoading = false
-                } else if item.status == .unknown {
-                    print("⏳ 状态未知，正在缓冲...")
                 }
             }
-        }
-
-        player.replaceCurrentItem(with: playerItem)
-        player.play()
-    }
-    
-    private func fetchStream() {
-        Task { @MainActor in
-            await doFetch()
-//            guard let url =  else {
-//                return
-//            }
-
             
-            
+            player.replaceCurrentItem(with: playerItem)
+            player.play()
         }
     }
 
     private func doFetch() async -> URL?{
-        let config = MediaSourceConfig(serializedArguments: nil, arguments:SelectorMediaSourceArguments.mock)
-        let a =  SelectorMediaSource(mediaSourceId: "1", config: config, repository: SelectorMediaSourceEpisodeCacheRepository(), client: URLSessionHTTPClient())
-        print(episodeInfo.name)
-        let result = await a.fetch(query: MediaFetchRequest(
-            subjectId: "\(episodeInfo.subjectId)", episodeId: "\(episodeInfo.id)", subjectNameCN: sessionTitle, subjectNames: [sessionTitle], episodeSort: .normal(number: Float(Int(episodeInfo.sort))), episodeName: "\(episodeInfo.nameCN)", episodeEp: .normal(number: Float(Int(episodeInfo.ep)))
-        ))
-        let resolver = TVOSMediaResolver()
-        
-        print(result)
-        var index = 0;
-        for r in result{
-            print("解析地址: \(r.media.originalUrl)")
-            do {
-                let link = try await resolver.resolve(pageUrl: r.media.originalUrl, config: config.arguments!.searchConfig.matchVideo)
-                print("🎉 最终 m3u8 直链: \(link.m3u8Url)")
-                print("📋 请求头: \(link.headers)")
-                print("🍪 Cookies: \(link.cookieString)")
-//                return URL(string:link.m3u8Url)
-                videoSources.append(VideoSource(sourceName: "\(index)", resources: [VideoResource(resourceName: "\(index)", url: link.m3u8Url, headers: link.headers)]))
-                index+=1
-            }catch {
-                print("❌ 解析失败或超时: \(error.localizedDescription)")
+        for (index, config) in getConfig().enumerated(){
+//            let config = MediaSourceConfig(serializedArguments: nil, arguments:SelectorMediaSourceArguments.mock)
+            print("get lines: \(config.arguments?.name ?? "UNKNOWN SOURCE \(index)")")
+            let a =  SelectorMediaSource(mediaSourceId: "1", config: config, repository: SelectorMediaSourceEpisodeCacheRepository(), client: URLSessionHTTPClient())
+            print(episodeInfo.name)
+            let result = await a.fetch(query: MediaFetchRequest(
+                subjectId: "\(episodeInfo.subjectId)", episodeId: "\(episodeInfo.id)", subjectNameCN: sessionTitle, subjectNames: [sessionTitle], episodeSort: .normal(number: Float(Int(episodeInfo.sort))), episodeName: "\(episodeInfo.nameCN)", episodeEp: .normal(number: Float(Int(episodeInfo.ep)))
+            ))
+            
+            var videoResources: [VideoResource] = []
+            for r in result {
+                videoResources.append(VideoResource(resourceName: r.media.properties.alliance, url: r.media.originalUrl, matchConfig: (config.arguments?.searchConfig.matchVideo)!))
             }
+            
+            videoSources.append(VideoSource(sourceName: config.arguments?.name ?? "Source \(index)", resources: videoResources))
+
         }
-//        text = "解析失败：没有找到对应的番剧\(sessionTitle),\(episodeInfo.sort),\(episodeInfo.ep)"
         return nil
     }
     
@@ -150,6 +155,15 @@ struct AnimePlayerContainerView: View {
         metadata.append(genreItem)
         
         return metadata
+    }
+
+    private var sourceMenuIdentity: String {
+        if videoSources.isEmpty { return "empty" }
+        return videoSources
+            .flatMap { source in
+                source.resources.map { "\(source.sourceName):\($0.resourceName):\($0.url)" }
+            }
+            .joined(separator: "|")
     }
     
 }

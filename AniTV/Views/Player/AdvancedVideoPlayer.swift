@@ -17,7 +17,8 @@ struct VideoSource{
 struct VideoResource{
     let resourceName: String
     let url: String
-    let headers: [String: String]
+//    let headers: [String: String]
+    let matchConfig: SelectorSearchConfig.MatchVideoConfig
 }
 
 struct AdvancedVideoPlayer: UIViewControllerRepresentable {
@@ -74,13 +75,22 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         }
         
         controller.infoViewActions = [startOverAction, favoriteAction]
-        controller.transportBarCustomMenuItems = [getSourceMenu(), getPipAction(context: context)]
+        controller.transportBarCustomMenuItems = makeTransportBarItems(context: context)
         return controller
     }
     
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         // 1. 根据当前抓取到的线路，动态生成 UIAction 数组
-        uiViewController.transportBarCustomMenuItems = [getSourceMenu(), getPipAction(context: context)]
+        uiViewController.transportBarCustomMenuItems = makeTransportBarItems(context: context)
+    }
+
+    private func makeTransportBarItems(context: Context) -> [UIMenuElement] {
+        var items: [UIMenuElement] = [getPipAction(context: context)]
+        if let sourceMenu = getSourceMenu() {
+            items.insert(sourceMenu, at: 0)
+        }
+        print("transportBar items: \(items.count), sources: \(availableSources.count)")
+        return items
     }
     
     private func getPipAction(context: Context) -> UIAction{
@@ -102,38 +112,36 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         }
     }
     
-    private func getSourceMenu() -> UIMenu{
+    private func getSourceMenu() -> UIMenu? {
         var sourceActions: [UIMenuElement] = []
-        if availableSources.isEmpty {
-            let loadingAction = UIAction(title: "暂无线路", attributes: .disabled) { _ in }
-            sourceActions.append(loadingAction)
-        } else {
-            // 遍历并生成真实的线路按钮
-            for (index, source) in availableSources.enumerated() {
-                var children: [UIAction] = []
-                for (j, resource) in source.resources.enumerated(){
-                    children.append(UIAction(title: resource.resourceName){ _ in
-                        print(resource.resourceName);
-                        onSourceSelected?(resource)
-                    })
+        var sourceManualActions: [UIMenuElement] = []
+
+        for source in availableSources {
+            let children = source.resources.map { resource in
+                UIAction(title: resource.resourceName) { _ in
+                    print("切换线路: \(resource.resourceName)")
+                    onSourceSelected?(resource)
                 }
-                if children.isEmpty{
-                    let action = UIAction(
-                        title: source.sourceName,
-                        attributes: .disabled
-                    ){ _ in }
-                    sourceActions.append(action)
-                }else{
-                    sourceActions.append(UIMenu(
-                        title: source.sourceName,
-                        children: children
-                        )
-                    )
-                }
-                
             }
+
+            if children.isEmpty {
+                continue
+            }
+
+            sourceManualActions.append(
+                UIMenu(
+                    title: source.sourceName,
+                    children: children
+                )
+            )
         }
         
+        sourceActions.append(UIMenu(options:.displayInline, children: sourceManualActions))
+        
+
+        sourceActions.append(UIAction(title: "自动") { _ in
+                print("切换线路: null")
+            })
         return UIMenu(
             title: "Sources",
             image: UIImage(systemName: "play.square.stack"),

@@ -98,6 +98,19 @@ struct SelectorSearchConfig: Codable {
     struct VideoHeaders: Codable {
         var referer: String = ""
         var userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+
+        enum CodingKeys: String, CodingKey {
+            case referer
+            case userAgent
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.referer = try container.decodeIfPresent(String.self, forKey: .referer) ?? ""
+            self.userAgent = try container.decodeIfPresent(String.self, forKey: .userAgent) ?? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        }
     }
 
     struct SelectMediaConfig: Codable {

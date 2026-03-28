@@ -2,6 +2,13 @@
 import Foundation
 import SwiftSoup
 
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        guard indices.contains(index) else { return nil }
+        return self[index]
+    }
+}
+
 protocol SelectorChannelFormat: AnyObject {
     var id: SelectorFormatId { get }
     func select(page: HTMLDocument, baseUrl: String, config: SelectorFormatConfig) -> SelectedChannelEpisodes?
@@ -45,7 +52,7 @@ class SelectorChannelFormatIndexGrouped: SelectorChannelFormat {
 
                 for (episodeIndex, episodeElement) in try listElement.select(selectEpisodesFromList).enumerated() {
                     let text = try episodeElement.text()
-                    let href = try links?[episodeIndex] ?? episodeElement.attr("href")
+                    let href = try links?[safe: episodeIndex] ?? episodeElement.attr("href")
 
                     let episodeInfo = WebSearchEpisodeInfo(
                         channel: channelName,
@@ -86,13 +93,16 @@ class SelectorChannelFormatNoChannel: SelectorChannelFormat {
         do {
             // Simulating parent for selectLinksOrNull; in real scenario, 'page' would be the parent.
             let doc = try SwiftSoup.parse(page.content)
-            let body = doc.body()!
+            guard let body = doc.body() else {
+                logger.warn(message: { "No body element found while selecting no-channel episodes." })
+                return nil
+            }
             let links = selectLinksOrNull(selectEpisodeLinks: config.selectEpisodeLinks, parent: body)
 
             var episodes: [WebSearchEpisodeInfo] = []
             for (index, episodeElement) in try page.select(cssSelector: selectEpisodes).enumerated() {
                 let text = try episodeElement.text()
-                let href = try links?[index] ?? episodeElement.attr("href")
+                let href = try links?[safe: index] ?? episodeElement.attr("href")
 
                 let episodeInfo = WebSearchEpisodeInfo(
                     channel: nil,

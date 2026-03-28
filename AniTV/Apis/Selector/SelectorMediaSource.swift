@@ -19,6 +19,37 @@ struct SelectorMediaSourceArguments: Codable, MediaSourceArguments {
     var searchConfig: SelectorSearchConfig
     var tier: Int
 
+    enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case iconUrl
+        case searchConfig
+        case tier
+    }
+
+    init(
+        name: String,
+        description: String,
+        iconUrl: String,
+        searchConfig: SelectorSearchConfig,
+        tier: Int
+    ) {
+        self.name = name
+        self.description = description
+        self.iconUrl = iconUrl
+        self.searchConfig = searchConfig
+        self.tier = tier
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unnamed Source"
+        self.description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        self.iconUrl = try container.decodeIfPresent(String.self, forKey: .iconUrl) ?? ""
+        self.searchConfig = try container.decodeIfPresent(SelectorSearchConfig.self, forKey: .searchConfig) ?? SelectorSearchConfig()
+        self.tier = try container.decodeIfPresent(Int.self, forKey: .tier) ?? 0
+    }
+
     static let `default` = SelectorMediaSourceArguments(
         name: "Selector",
         description: "",

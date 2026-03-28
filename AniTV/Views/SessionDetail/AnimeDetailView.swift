@@ -193,47 +193,47 @@ struct BadgeView: View {
 extension SelectorMediaSourceArguments {
     static var mock: SelectorMediaSourceArguments {
         let json = #"""
-        {
-                  "name": "樱花动漫",
-                  "description": "直连，来自樱花动漫，导航：https://www.yhdm6go.top/",
-                  "iconUrl": "https://yhdm6go.top/favicon.ico",
-                  "searchConfig": {
-                    "searchUrl": "https://yhdm6go.top/vsh/-------------/?wd={keyword}&submit=",
-                    "searchUseOnlyFirstWord": true,
-                    "subjectFormatId": "a",
-                    "selectorSubjectFormatA": {
-                      "selectLists": "h4.vodlist_title > a",
-                      "preferShorterName": true
-                    },
-                    "channelFormatId": "index-grouped",
-                    "selectorChannelFormatFlattened": {
-                      "selectChannelNames": "div.play_source_tab a[href=\"javascript:void(0);\"]",
-                      "matchChannelName": "",
-                      "selectEpisodeLists": "div.play_list_box.hide",
-                      "selectEpisodesFromList": "a",
-                      "selectEpisodeLinksFromList": "",
-                      "matchEpisodeSortFromName": "第\\s*(?<ep>.+)\\s*[话集]"
-                    },
-                    "defaultResolution": "1080P",
-                    "defaultSubtitleLanguage": "CHS",
-                    "onlySupportsPlayers": [],
-                    "selectMedia": {
-                      "distinguishSubjectName": true,
-                      "distinguishChannelName": true
-                    },
-                    "matchVideo": {
-                      "enableNestedUrl": true,
-                      "matchNestedUrl": "$^",
-                      "matchVideoUrl": "(^https?:\\/\\/(?:[^\\/]+\\.)?cdn\\.ryplay12\\.com.+\\.(mp4|m3u8|flv|mkv)(\\?.+)?)|(url=(?<v>https?:\\/\\/(?:[^\\/]+\\.)?cdn\\.ryplay12\\.com.+\\.(mp4|m3u8|flv|mkv)(\\?.+)?))",
-                      "cookies": "quality=1080",
-                      "addHeadersToVideo": {
-                        "referer": "",
+{
+          "name": "omofun111",
+          "description": "直连，来自omofun动漫视频网，导航：https://enlienli.link/",
+          "iconUrl": "https://enlienli.link/upload/mxprocms/20230707-1/49f4b8a7fd5cbf77ffcfa7a52e755675.gif",
+          "searchConfig": {
+            "searchUrl": "https://enlienli.link/vod/search.html?wd={keyword}",
+            "searchUseOnlyFirstWord": true,
+            "subjectFormatId": "a",
+            "selectorSubjectFormatA": {
+              "selectLists": ".module-card-item>.module-card-item-info>.module-card-item-title>a",
+              "preferShorterName": false
+            },
+            "channelFormatId": "index-grouped",
+            "selectorChannelFormatFlattened": {
+              "selectChannelNames": "div>div>div>div>div>div.module-tab-items-box>.module-tab-item>span",
+              "matchChannelName": "(?!高清线路3)",
+              "selectEpisodeLists": ".module-play-list-content",
+              "selectEpisodesFromList": "a",
+              "selectEpisodeLinksFromList": "",
+              "matchEpisodeSortFromName": "第\\s*(?<ep>.+)\\s*[话集]"
+            },
+            "defaultResolution": "1080P",
+            "defaultSubtitleLanguage": "CHS",
+            "onlySupportsPlayers": [],
+            "selectMedia": {
+              "distinguishSubjectName": true,
+              "distinguishChannelName": true
+            },
+            "matchVideo": {
+              "enableNestedUrl": true,
+              "matchNestedUrl": "$^",
+              "matchVideoUrl": "(^http(s)?:\\/\\/(?!.*http).+\\.(mp4|m3u8|flv|mkv))|(url=(?<v>http(s)?:\\/\\/.+\\.(mp4|m3u8|flv|mkv)))|(^http(s)?:\\/\\/(?!.*http).+(sign\\.bytetos|sign\\.byteimg|mcloud\\.139|cloudflarestorage|tos-cn)\\.com(?!.*\\.ts).+(-expires|-signature))|((bilivideo|akamaized|szbdyd)\\.com(?!.*\\.ts))|(\\/video\\/tos\\/alisg\\/)|(\\/video\\/.*mime_type=video)",
+              "cookies": "",
+              "addHeadersToVideo": {
+                "referer": "",
 "userAgent":""
-                      }
-                    }
-                  },
-                  "tier": 4
-                }
+              }
+            }
+          },
+          "tier": 0
+        }
 """#.data(using: .utf8)!
         
         return try! JSONDecoder().decode(SelectorMediaSourceArguments.self, from: json)
