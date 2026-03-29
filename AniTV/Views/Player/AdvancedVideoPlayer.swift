@@ -32,6 +32,9 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     
     final class Coordinator: NSObject {
         var pipController: AVPictureInPictureController?
+        let sourcePanelModel = SourceSwitchPanelModel()
+        var detailsHostingController: UIHostingController<AniTVCustomDropdownView>?
+        var sourceHostingController: UIHostingController<SourceSwitchPanelView>?
     }
     
     func makeCoordinator() -> Coordinator {
@@ -42,16 +45,19 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.allowsPictureInPicturePlayback = true
-        // 🌟 魔法在这里！把刚才写的 SwiftUI 视图包装成 UIViewController
-        let customUI = AniTVCustomDropdownView(title: title, sort: sort)
-        let hostingController = UIHostingController(rootView: customUI)
+        let detailsHostingController = UIHostingController(rootView: AniTVCustomDropdownView(title: title, sort: sort))
+        detailsHostingController.view.backgroundColor = .clear
+        detailsHostingController.title = String(localized: .nextUp)
+        context.coordinator.detailsHostingController = detailsHostingController
+
+        context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
+        let sourceHostingController = UIHostingController(rootView: SourceSwitchPanelView(model: context.coordinator.sourcePanelModel))
+//        sourceHostingController.view.backgroundColor = .clear
+        sourceHostingController.title = "Sources"
+//        sourceHostingController.preferredContentSize = CGSize(width: 1760, height: 324)
+        context.coordinator.sourceHostingController = sourceHostingController
         
-        // 背景设为透明，这样下拉时还能隐约看到后面的视频
-        hostingController.view.backgroundColor = .clear
-        hostingController.title = String(localized: .nextUp)
-        
-        // 🌟 告诉系统：下滑时，展示我的面板！
-        controller.customInfoViewControllers = [hostingController]
+        controller.customInfoViewControllers = [sourceHostingController, detailsHostingController]
         
         let startOverAction = UIAction(
                 title: "从头开始", // 或者 "从头播放"
@@ -75,22 +81,15 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         }
         
         controller.infoViewActions = [startOverAction, favoriteAction]
-        controller.transportBarCustomMenuItems = makeTransportBarItems(context: context)
+        controller.transportBarCustomMenuItems = [getPipAction(context: context)]
         return controller
     }
     
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        // 1. 根据当前抓取到的线路，动态生成 UIAction 数组
-        uiViewController.transportBarCustomMenuItems = makeTransportBarItems(context: context)
-    }
-
-    private func makeTransportBarItems(context: Context) -> [UIMenuElement] {
-        var items: [UIMenuElement] = [getPipAction(context: context)]
-        if let sourceMenu = getSourceMenu() {
-            items.insert(sourceMenu, at: 0)
-        }
-        print("transportBar items: \(items.count), sources: \(availableSources.count)")
-        return items
+        uiViewController.player = player
+        context.coordinator.detailsHostingController?.rootView = AniTVCustomDropdownView(title: title, sort: sort)
+        context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
+        uiViewController.transportBarCustomMenuItems = [getPipAction(context: context)]
     }
     
     private func getPipAction(context: Context) -> UIAction{
@@ -110,43 +109,6 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
                 print("PiP 暂不可用")
             }
         }
-    }
-    
-    private func getSourceMenu() -> UIMenu? {
-        var sourceActions: [UIMenuElement] = []
-        var sourceManualActions: [UIMenuElement] = []
-
-        for source in availableSources {
-            let children = source.resources.map { resource in
-                UIAction(title: resource.resourceName) { _ in
-                    print("切换线路: \(resource.resourceName)")
-                    onSourceSelected?(resource)
-                }
-            }
-
-            if children.isEmpty {
-                continue
-            }
-
-            sourceManualActions.append(
-                UIMenu(
-                    title: source.sourceName,
-                    children: children
-                )
-            )
-        }
-        
-        sourceActions.append(UIMenu(options:.displayInline, children: sourceManualActions))
-        
-
-        sourceActions.append(UIAction(title: "自动") { _ in
-                print("切换线路: null")
-            })
-        return UIMenu(
-            title: "Sources",
-            image: UIImage(systemName: "play.square.stack"),
-            children: sourceActions
-        )
     }
     
     private func findPlayerLayer(in layer: CALayer) -> AVPlayerLayer? {

@@ -30,7 +30,6 @@ struct AnimePlayerContainerView: View {
                 availableSources: videoSources,
                 onSourceSelected: onSwitch(resource:)
             )
-                .id(sourceMenuIdentity)
                 .ignoresSafeArea()
             
 //            if isLoading {
@@ -46,6 +45,7 @@ struct AnimePlayerContainerView: View {
 //            }
         }
         .onAppear {
+            onSwitch(resource: VideoResource(resourceName: "", url: "", matchConfig: SelectorSearchConfig.MatchVideoConfig()))
             Task { @MainActor in
                 await doFetch()
             }
@@ -104,7 +104,6 @@ struct AnimePlayerContainerView: View {
 
     private func doFetch() async -> URL?{
         for (index, config) in getConfig().enumerated(){
-//            let config = MediaSourceConfig(serializedArguments: nil, arguments:SelectorMediaSourceArguments.mock)
             print("get lines: \(config.arguments?.name ?? "UNKNOWN SOURCE \(index)")")
             let a =  SelectorMediaSource(mediaSourceId: "1", config: config, repository: SelectorMediaSourceEpisodeCacheRepository(), client: URLSessionHTTPClient())
             print(episodeInfo.name)
@@ -157,15 +156,6 @@ struct AnimePlayerContainerView: View {
         return metadata
     }
 
-    private var sourceMenuIdentity: String {
-        if videoSources.isEmpty { return "empty" }
-        return videoSources
-            .flatMap { source in
-                source.resources.map { "\(source.sourceName):\($0.resourceName):\($0.url)" }
-            }
-            .joined(separator: "|")
-    }
-    
 }
 
 #Preview {

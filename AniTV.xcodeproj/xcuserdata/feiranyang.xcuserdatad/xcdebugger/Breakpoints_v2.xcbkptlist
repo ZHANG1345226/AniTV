@@ -302,10 +302,10 @@
             filePath = "AniTV/Views/Player/AdvancedVideoPlayer.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "42"
-            endingLineNumber = "42"
-            landmarkName = "makeUIViewController(context:)"
-            landmarkType = "7">
+            startingLineNumber = "43"
+            endingLineNumber = "43"
+            landmarkName = "AdvancedVideoPlayer"
+            landmarkType = "14">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -318,9 +318,9 @@
             filePath = "AniTV/Views/Player/AdvancedVideoPlayer.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "84"
-            endingLineNumber = "84"
-            landmarkName = "updateUIViewController(_:context:)"
+            startingLineNumber = "85"
+            endingLineNumber = "85"
+            landmarkName = "makeUIViewController(context:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -590,8 +590,8 @@
             filePath = "AniTV/Views/Player/AnimePlayerContainerView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "49"
-            endingLineNumber = "49"
+            startingLineNumber = "50"
+            endingLineNumber = "50"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -642,50 +642,6 @@
             endingLineNumber = "114"
             landmarkName = "DefaultSelectorMediaSourceEngine"
             landmarkType = "3">
-            <Locations>
-               <Location
-                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - d4b97134ac6fed27"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.deinit"
-                  moduleName = "AniTV.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "0"
-                  endingLineNumber = "0">
-               </Location>
-               <Location
-                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - 9af78960f9951eb7"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.__isolated_deallocating_deinit"
-                  moduleName = "AniTV.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "0"
-                  endingLineNumber = "0">
-               </Location>
-               <Location
-                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - e54e980599e203da"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.__deallocating_deinit"
-                  moduleName = "AniTV.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "0"
-                  endingLineNumber = "0">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -714,8 +670,8 @@
             filePath = "AniTV/Views/Player/AnimePlayerContainerView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "68"
-            endingLineNumber = "68"
+            startingLineNumber = "69"
+            endingLineNumber = "69"
             landmarkName = "onSwitch(resource:)"
             landmarkType = "7">
          </BreakpointContent>
