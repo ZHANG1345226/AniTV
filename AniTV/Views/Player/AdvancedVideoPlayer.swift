@@ -9,12 +9,53 @@
 import SwiftUI
 import AVKit
 
-struct VideoSource{
+final class AniTVPlayerViewController: AVPlayerViewController {
+    var onUpArrowWhenControlsVisible: (() -> Void)?
+    var shouldIgnoreUpArrow = false
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        super.pressesEnded(presses, with: event)
+
+        guard !shouldIgnoreUpArrow else { return }
+        guard presses.contains(where: { $0.type == .upArrow }) else { return }
+        guard arePlaybackControlsLikelyVisible(in: view) else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onUpArrowWhenControlsVisible?()
+        }
+    }
+
+    private func arePlaybackControlsLikelyVisible(in rootView: UIView) -> Bool {
+        let className = String(describing: type(of: rootView))
+        let looksLikeControlsView =
+            className.localizedCaseInsensitiveContains("transport") ||
+            className.localizedCaseInsensitiveContains("control") ||
+            className.localizedCaseInsensitiveContains("playback")
+
+        if looksLikeControlsView,
+           !rootView.isHidden,
+           rootView.alpha > 0.01,
+           rootView.bounds.width > 0,
+           rootView.bounds.height > 0 {
+            return true
+        }
+
+        for subview in rootView.subviews {
+            if arePlaybackControlsLikelyVisible(in: subview) {
+                return true
+            }
+        }
+
+        return false
+    }
+}
+
+struct VideoSource {
     let sourceName: String
     let resources: [VideoResource]
 }
 
-struct VideoResource{
+struct VideoResource {
     let resourceName: String
     let url: String
 //    let headers: [String: String]
@@ -26,6 +67,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     let title: String
     let sort: Int
     var availableSources: [VideoSource]
+    @Binding var isSourcePanelPresented: Bool
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
     var onSourceSelected: ((VideoResource) -> Void)?
@@ -34,7 +76,6 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         var pipController: AVPictureInPictureController?
         let sourcePanelModel = SourceSwitchPanelModel()
         var detailsHostingController: UIHostingController<AniTVCustomDropdownView>?
-        var sourceHostingController: UIHostingController<SourceSwitchPanelView>?
     }
     
     func makeCoordinator() -> Coordinator {
@@ -42,22 +83,20 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     }
     
     func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
+        let controller = AniTVPlayerViewController()
         controller.player = player
         controller.allowsPictureInPicturePlayback = true
+        controller.onUpArrowWhenControlsVisible = {
+            guard !isSourcePanelPresented else { return }
+            isSourcePanelPresented = true
+        }
         let detailsHostingController = UIHostingController(rootView: AniTVCustomDropdownView(title: title, sort: sort))
         detailsHostingController.view.backgroundColor = .clear
         detailsHostingController.title = String(localized: .nextUp)
         context.coordinator.detailsHostingController = detailsHostingController
 
         context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
-        let sourceHostingController = UIHostingController(rootView: SourceSwitchPanelView(model: context.coordinator.sourcePanelModel))
-//        sourceHostingController.view.backgroundColor = .clear
-        sourceHostingController.title = "Sources"
-//        sourceHostingController.preferredContentSize = CGSize(width: 1760, height: 324)
-        context.coordinator.sourceHostingController = sourceHostingController
-        
-        controller.customInfoViewControllers = [sourceHostingController, detailsHostingController]
+        controller.customInfoViewControllers = [detailsHostingController]
         
         let startOverAction = UIAction(
                 title: "从头开始", // 或者 "从头播放"
@@ -81,15 +120,31 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         }
         
         controller.infoViewActions = [startOverAction, favoriteAction]
-        controller.transportBarCustomMenuItems = [getPipAction(context: context)]
+        controller.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context)]
         return controller
     }
     
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         uiViewController.player = player
+        if let controller = uiViewController as? AniTVPlayerViewController {
+            controller.shouldIgnoreUpArrow = isSourcePanelPresented
+            controller.onUpArrowWhenControlsVisible = {
+                guard !isSourcePanelPresented else { return }
+                isSourcePanelPresented = true
+            }
+        }
         context.coordinator.detailsHostingController?.rootView = AniTVCustomDropdownView(title: title, sort: sort)
         context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
-        uiViewController.transportBarCustomMenuItems = [getPipAction(context: context)]
+        uiViewController.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context)]
+    }
+
+    private func getSourcePanelAction() -> UIAction {
+        UIAction(
+            title: "线路",
+            image: UIImage(systemName: "list.bullet.rectangle")
+        ) { _ in
+            isSourcePanelPresented.toggle()
+        }
     }
     
     private func getPipAction(context: Context) -> UIAction{

@@ -13,6 +13,8 @@ struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
     @State private var videoSources: [VideoSource] = []
     @State private var isLoading = true
+    @State private var isSourcePanelPresented = false
+    @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
@@ -28,9 +30,26 @@ struct AnimePlayerContainerView: View {
                 title: sessionTitle,
                 sort: Int(episodeInfo.sort),
                 availableSources: videoSources,
+                isSourcePanelPresented: $isSourcePanelPresented,
                 onSourceSelected: onSwitch(resource:)
             )
                 .ignoresSafeArea()
+
+            if isSourcePanelPresented {
+                VStack(spacing: 0) {
+                    SourceSwitchPanelView(model: sourcePanelModel)
+                    .frame(maxWidth: 1760)
+                    .padding(.top, 0)
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
+                .onExitCommand {
+                    isSourcePanelPresented = false
+                }
+            }
             
 //            if isLoading {
 //                VStack(spacing: 20) {
@@ -44,7 +63,15 @@ struct AnimePlayerContainerView: View {
 //                .background(Color.black)
 //            }
         }
+        .animation(.easeOut(duration: 0.2), value: isSourcePanelPresented)
         .onAppear {
+            sourcePanelModel.update(
+                sources: videoSources,
+                onSourceSelected: { resource in
+                    isSourcePanelPresented = false
+                    onSwitch(resource: resource)
+                }
+            )
             onSwitch(resource: VideoResource(resourceName: "", url: "", matchConfig: SelectorSearchConfig.MatchVideoConfig()))
             Task { @MainActor in
                 await doFetch()
@@ -58,7 +85,7 @@ struct AnimePlayerContainerView: View {
             statusObservation = nil
         }
     }
-    
+
     private func onSwitch(resource: VideoResource){
         Task { @MainActor in
             let resolver = TVOSMediaResolver()
@@ -117,6 +144,13 @@ struct AnimePlayerContainerView: View {
             }
             
             videoSources.append(VideoSource(sourceName: config.arguments?.name ?? "Source \(index)", resources: videoResources))
+            sourcePanelModel.update(
+                sources: videoSources,
+                onSourceSelected: { resource in
+                    isSourcePanelPresented = false
+                    onSwitch(resource: resource)
+                }
+            )
 
         }
         return nil
