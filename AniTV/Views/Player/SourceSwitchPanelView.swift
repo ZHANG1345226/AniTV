@@ -123,7 +123,7 @@ final class SourceSwitchPanelModel: ObservableObject {
         pendingResourceIndex = nil
     }
 
-    func markPendingSelectionFailed() {
+    func markPendingSelectionResolveFailed() {
         if let pendingSourceIndex, let pendingResourceIndex {
             failedResourceKeys.insert(
                 SourcePanelResourceKey(
@@ -132,6 +132,20 @@ final class SourceSwitchPanelModel: ObservableObject {
                 )
             )
         }
+        clearPendingSelection()
+    }
+
+    func markPendingSelectionPlaybackFailed() {
+        if let pendingSourceIndex, let pendingResourceIndex {
+            failedResourceKeys.insert(
+                SourcePanelResourceKey(
+                    sourceIndex: pendingSourceIndex,
+                    resourceIndex: pendingResourceIndex
+                )
+            )
+        }
+        committedSourceIndex = nil
+        committedResourceIndex = nil
         clearPendingSelection()
     }
 

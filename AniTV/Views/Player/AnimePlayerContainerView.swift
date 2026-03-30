@@ -9,7 +9,7 @@
 import SwiftUI
 import AVKit
 
-private let sourceFetchConcurrency = 3
+private let sourceFetchConcurrency = 1
 
 private struct QueuedVideoResource {
     let sourceIndex: Int
@@ -151,10 +151,13 @@ struct AnimePlayerContainerView: View {
     @State private var isSourcePanelPresented = true
     @State private var sourcePanelPresentationID = 0
     @State private var hasUserSelectedSource = false
+    @State private var hasResolvedAutoPlayback = false
     @State private var queuedVideoResources: [QueuedVideoResource] = []
     @State private var queuedVideoResourceKeys: Set<QueuedVideoResourceKey> = []
     @State private var attemptedAutoResourceKeys: Set<QueuedVideoResourceKey> = []
     @State private var isAttemptingPlayback = false
+    @State private var fetchSourcesTask: Task<Void, Never>?
+    @State private var lastPlaybackPosition: CMTime?
     @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
@@ -211,16 +214,26 @@ struct AnimePlayerContainerView: View {
             sourcePanelPresentationID += 1
         }
         .onAppear {
+            hasResolvedAutoPlayback = false
+            hasUserSelectedSource = false
+            queuedVideoResources = []
+            queuedVideoResourceKeys = []
+            attemptedAutoResourceKeys = []
+            isAttemptingPlayback = false
             sourcePanelModel.update(
                 sources: videoSources,
                 onSourceSelected: handleUserSelectedResource
             )
-            Task { @MainActor in
+            fetchSourcesTask?.cancel()
+            fetchSourcesTask = Task { @MainActor in
                 await doFetch()
             }
         }
         .onDisappear {
             // 退出时清理资源和监听器
+            fetchSourcesTask?.cancel()
+            fetchSourcesTask = nil
+            lastPlaybackPosition = nil
             player.pause()
             player.replaceCurrentItem(with: nil)
             statusObservation?.invalidate()
@@ -230,6 +243,7 @@ struct AnimePlayerContainerView: View {
 
     private func handleUserSelectedResource(sourceIndex: Int, resourceIndex: Int, resource: VideoResource) {
         hasUserSelectedSource = true
+        hasResolvedAutoPlayback = true
         startPlaybackAttempt(
             sourceIndex: sourceIndex,
             resourceIndex: resourceIndex,
@@ -252,7 +266,7 @@ struct AnimePlayerContainerView: View {
     }
 
     private func attemptNextQueuedResourceIfNeeded() {
-        guard !hasUserSelectedSource, !isAttemptingPlayback else { return }
+        guard !hasUserSelectedSource, !hasResolvedAutoPlayback, !isAttemptingPlayback else { return }
 
         while !queuedVideoResources.isEmpty {
             let next = queuedVideoResources.removeFirst()
@@ -287,6 +301,17 @@ struct AnimePlayerContainerView: View {
 
     private func onSwitch(resource: VideoResource, isUserInitiated: Bool){
         Task { @MainActor in
+            let currentTime = player.currentTime()
+            let currentItemStatus = player.currentItem?.status
+            let validCurrentTime = validatedPlaybackPosition(from: currentTime)
+            let resumeTime: CMTime?
+
+            if currentItemStatus != .failed, let validCurrentTime {
+                resumeTime = validCurrentTime
+                lastPlaybackPosition = validCurrentTime
+            } else {
+                resumeTime = lastPlaybackPosition
+            }
             let resolver = TVOSMediaResolver()
             print("解析地址: \(resource.url)")
             var link: ExtractionResult
@@ -298,7 +323,7 @@ struct AnimePlayerContainerView: View {
             }catch {
                 print("❌ 解析失败或超时: \(error.localizedDescription)")
                 isAttemptingPlayback = false
-                sourcePanelModel.markPendingSelectionFailed()
+                sourcePanelModel.markPendingSelectionResolveFailed()
                 if !isUserInitiated {
                     attemptNextQueuedResourceIfNeeded()
                 }
@@ -320,7 +345,7 @@ struct AnimePlayerContainerView: View {
                         }
                         text = "播放失败"
                         isAttemptingPlayback = false
-                        sourcePanelModel.markPendingSelectionFailed()
+                        sourcePanelModel.markPendingSelectionPlaybackFailed()
                         if !isUserInitiated {
                             attemptNextQueuedResourceIfNeeded()
                         }
@@ -328,8 +353,17 @@ struct AnimePlayerContainerView: View {
                         print("✅ 准备就绪，可以播放")
                         isLoading = false
                         isAttemptingPlayback = false
+                        hasResolvedAutoPlayback = true
                         sourcePanelModel.confirmPendingSelection()
                         isSourcePanelPresented = false
+                        if let resumeTime {
+                            lastPlaybackPosition = resumeTime
+                            player.seek(to: resumeTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                                player.play()
+                            }
+                        } else {
+                            player.play()
+                        }
                     } else if item.status == .unknown {
                         print("⏳ 状态未知，正在缓冲...")
                     }
@@ -337,11 +371,11 @@ struct AnimePlayerContainerView: View {
             }
             
             player.replaceCurrentItem(with: playerItem)
-            player.play()
         }
     }
 
     private func doFetch() async -> URL?{
+        guard !Task.isCancelled else { return nil }
         let configs = getConfig()
         let indexedConfigs = Array(configs.enumerated())
 
@@ -358,12 +392,14 @@ struct AnimePlayerContainerView: View {
         sourcePanelModel.setLoadingSources(Set(indexedConfigs.map(\.0)))
 
         for batchStart in stride(from: 0, to: indexedConfigs.count, by: sourceFetchConcurrency) {
+            guard !Task.isCancelled else { return nil }
             let batchEnd = min(batchStart + sourceFetchConcurrency, indexedConfigs.count)
             let batch = Array(indexedConfigs[batchStart..<batchEnd])
 
             let batchResults = await withTaskGroup(of: (Int, [VideoResource]).self) { group in
                 for (index, config) in batch {
                     group.addTask {
+                        guard !Task.isCancelled else { return (index, []) }
                         print("get lines: \(config.arguments?.name ?? "UNKNOWN SOURCE \(index)")")
                         let mediaSource = SelectorMediaSource(
                             mediaSourceId: "1",
@@ -395,11 +431,16 @@ struct AnimePlayerContainerView: View {
 
                 var collected: [(Int, [VideoResource])] = []
                 for await item in group {
+                    guard !Task.isCancelled else {
+                        group.cancelAll()
+                        return collected
+                    }
                     collected.append(item)
                 }
                 return collected
             }
 
+            guard !Task.isCancelled else { return nil }
             for (index, resources) in batchResults.sorted(by: { $0.0 < $1.0 }) {
                 guard videoSources.indices.contains(index) else { continue }
                 videoSources[index] = VideoSource(
@@ -451,6 +492,18 @@ struct AnimePlayerContainerView: View {
         metadata.append(genreItem)
         
         return metadata
+    }
+
+    private func validatedPlaybackPosition(from time: CMTime) -> CMTime? {
+        guard time.isValid,
+              !time.isIndefinite,
+              !time.isNegativeInfinity,
+              !time.isPositiveInfinity,
+              time.seconds.isFinite,
+              time.seconds >= 0 else {
+            return nil
+        }
+        return time
     }
 
 }

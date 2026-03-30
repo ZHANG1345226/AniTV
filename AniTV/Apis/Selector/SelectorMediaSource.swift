@@ -119,13 +119,37 @@ class DefaultSelectorMediaSourceEngine: SelectorMediaSourceEngine {
         self.client = client
     }
 
+    private func decodeJSONStringLiteral(_ value: String) -> String? {
+        guard let data = value.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(String.self, from: data)
+    }
+
+    private func normalizeHTMLContent(from data: Data) throws -> String {
+        guard let rawString = String(data: data, encoding: .utf8) else {
+            throw RepositoryException.custom("Failed to decode HTML content")
+        }
+
+        var normalized = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
+        for _ in 0..<5 {
+            let looksLikeJSONStringLiteral =
+                normalized.first == "\"" && normalized.last == "\""
+
+            guard looksLikeJSONStringLiteral,
+                  let decodedString = decodeJSONStringLiteral(normalized) else {
+                break
+            }
+
+            normalized = decodedString
+        }
+
+        return normalized
+    }
+
     func doHttpGet(uri: String) async throws -> HTMLDocument {
         guard let url = URL(string: uri) else { throw URLError(.badURL) }
         do {
             let data = try await client.get(url: url)
-            guard let htmlString = String(data: data, encoding: .utf8) else {
-                throw RepositoryException.custom("Failed to decode HTML content")
-            }
+            let htmlString = try normalizeHTMLContent(from: data)
             return HTMLDocument(content: htmlString)
         } catch {
             throw try RepositoryException.wrapOrThrowCancellation(error)
