@@ -304,8 +304,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "43"
             endingLineNumber = "43"
-            landmarkName = "AdvancedVideoPlayer"
-            landmarkType = "14">
+            landmarkName = "arePlaybackControlsLikelyVisible(in:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -320,7 +320,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "85"
             endingLineNumber = "85"
-            landmarkName = "updateUIViewController(_:context:)"
+            landmarkName = "makeUIViewController(context:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

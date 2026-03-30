@@ -86,6 +86,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let controller = AniTVPlayerViewController()
         controller.player = player
         controller.allowsPictureInPicturePlayback = true
+        controller.showsPlaybackControls = !isSourcePanelPresented
         controller.onUpArrowWhenControlsVisible = {
             guard !isSourcePanelPresented else { return }
             isSourcePanelPresented = true
@@ -127,6 +128,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         uiViewController.player = player
         if let controller = uiViewController as? AniTVPlayerViewController {
+            uiViewController.showsPlaybackControls = !isSourcePanelPresented
             controller.shouldIgnoreUpArrow = isSourcePanelPresented
             controller.onUpArrowWhenControlsVisible = {
                 guard !isSourcePanelPresented else { return }

@@ -75,8 +75,7 @@ struct SourceSwitchPanelView: View {
     @ObservedObject var model: SourceSwitchPanelModel
     @Namespace private var sourcePanelFocusScope
     @FocusState private var focusedTarget: SourcePanelFocusTarget?
-    @FocusState private var isBottomFocusTrapActive: Bool
-    @State private var lastPanelFocusedTarget: SourcePanelFocusTarget?
+    @FocusState private var isFocusEntryActive: Bool
     private let panelShape = RoundedRectangle(cornerRadius: 60, style: .continuous)
 
     var body: some View {
@@ -93,7 +92,7 @@ struct SourceSwitchPanelView: View {
          .frame(maxWidth: .infinity)
          .frame(height: sourcePanelHeight)
          .padding(.horizontal, 22)
-        //  .padding(.bottom, 22)
+         .padding(.bottom, 22)
          .background {
              RoundedRectangle(cornerRadius: 50, style: .continuous)
                  .fill(.ultraThinMaterial)
@@ -111,15 +110,21 @@ struct SourceSwitchPanelView: View {
          .environment(\.colorScheme, .light)
          .focusScope(sourcePanelFocusScope)
          .focusSection()
+         .overlay(alignment: .topLeading) {
+             focusEntry
+         }
          .onAppear {
              restoreInitialFocus()
          }
-         .onChange(of: model.sources.count) { _, _ in
+         .onChange(of: isFocusEntryActive) { _, isActive in
+             guard isActive else { return }
              restoreInitialFocus()
+             DispatchQueue.main.async {
+                 isFocusEntryActive = false
+             }
          }
          .onChange(of: focusedTarget) { _, newValue in
              guard let newValue else { return }
-             lastPanelFocusedTarget = newValue
              switch newValue {
              case .source(let index):
                  model.focusSource(at: index)
@@ -127,36 +132,24 @@ struct SourceSwitchPanelView: View {
                  break
              }
          }
-         .onChange(of: isBottomFocusTrapActive) { _, isActive in
-             guard isActive, let currentTarget = lastPanelFocusedTarget else { return }
-             DispatchQueue.main.async {
-                 focusedTarget = currentTarget
-                 isBottomFocusTrapActive = false
-             }
-         }
-         .overlay(alignment: .bottom) {
-             bottomFocusTrap
-         }
     }
 
     private func restoreInitialFocus() {
         guard model.sources.indices.contains(model.focusedSourceIndex) else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            let initialTarget = SourcePanelFocusTarget.source(model.focusedSourceIndex)
-            lastPanelFocusedTarget = initialTarget
-            focusedTarget = initialTarget
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            focusedTarget = .source(model.focusedSourceIndex)
         }
     }
 
-    private var bottomFocusTrap: some View {
+    private var focusEntry: some View {
         Button(action: {}) {
             Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
+                .frame(width: 1, height: 1)
         }
         .buttonStyle(CleanButtonStyle())
-        .focused($isBottomFocusTrapActive)
-        .opacity(0.01)
+        .focused($isFocusEntryActive)
+        .prefersDefaultFocus(true, in: sourcePanelFocusScope)
+        .opacity(0.001)
         .allowsHitTesting(false)
     }
 

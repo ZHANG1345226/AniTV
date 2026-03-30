@@ -9,11 +9,134 @@
 import SwiftUI
 import AVKit
 
+private struct SourcePanelOverlayContainer: UIViewControllerRepresentable {
+    @ObservedObject var model: SourceSwitchPanelModel
+
+    func makeUIViewController(context: Context) -> SourcePanelOverlayViewController {
+        SourcePanelOverlayViewController(model: model)
+    }
+
+    func updateUIViewController(_ uiViewController: SourcePanelOverlayViewController, context: Context) {
+        uiViewController.update(model: model)
+    }
+}
+
+private final class SourcePanelOverlayViewController: UIViewController {
+    private let hostingController: UIHostingController<SourceSwitchPanelView>
+
+    init(model: SourceSwitchPanelModel) {
+        hostingController = UIHostingController(rootView: SourceSwitchPanelView(model: model))
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = .clear
+        setupHostingController()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        requestPanelFocus()
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        if let focusableView = findFirstFocusableView(in: hostingController.view) {
+            return [focusableView]
+        }
+        return [hostingController.view]
+    }
+
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        guard let previouslyFocusedView = context.previouslyFocusedView,
+              isDescendant(previouslyFocusedView, of: hostingController.view) else {
+            return true
+        }
+
+        guard let nextFocusedView = context.nextFocusedView else {
+            return false
+        }
+
+        if isDescendant(nextFocusedView, of: hostingController.view) {
+            return true
+        }
+
+        let heading = context.focusHeading
+        if heading.contains(.up) || heading.contains(.down) {
+            return false
+        }
+
+        return false
+    }
+
+    func update(model: SourceSwitchPanelModel) {
+    }
+
+    private func setupHostingController() {
+        addChild(hostingController)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        hostingController.view.backgroundColor = .clear
+        view.addSubview(hostingController.view)
+
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        hostingController.didMove(toParent: self)
+    }
+    private func requestPanelFocus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            self.hostingController.view.setNeedsLayout()
+            self.hostingController.view.layoutIfNeeded()
+            self.setNeedsFocusUpdate()
+            self.updateFocusIfNeeded()
+            self.hostingController.view.setNeedsFocusUpdate()
+            self.hostingController.view.updateFocusIfNeeded()
+        }
+    }
+
+    private func isDescendant(_ view: UIView, of ancestor: UIView) -> Bool {
+        var current: UIView? = view
+        while let candidate = current {
+            if candidate === ancestor {
+                return true
+            }
+            current = candidate.superview
+        }
+        return false
+    }
+
+    private func findFirstFocusableView(in rootView: UIView) -> UIView? {
+        if rootView.canBecomeFocused, !rootView.isHidden, rootView.alpha > 0.01 {
+            return rootView
+        }
+
+        for subview in rootView.subviews {
+            if let match = findFirstFocusableView(in: subview) {
+                return match
+            }
+        }
+
+        return nil
+    }
+}
+
 struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
     @State private var videoSources: [VideoSource] = []
     @State private var isLoading = true
     @State private var isSourcePanelPresented = false
+    @State private var sourcePanelPresentationID = 0
     @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
@@ -37,8 +160,9 @@ struct AnimePlayerContainerView: View {
 
             if isSourcePanelPresented {
                 VStack(spacing: 0) {
-                    SourceSwitchPanelView(model: sourcePanelModel)
-                    .frame(maxWidth: 1760)
+                    SourcePanelOverlayContainer(model: sourcePanelModel)
+                    .id(sourcePanelPresentationID)
+                    .frame(width: 1760, height: 360)
                     .padding(.top, 0)
 
                     Spacer(minLength: 0)
@@ -64,6 +188,10 @@ struct AnimePlayerContainerView: View {
 //            }
         }
         .animation(.easeOut(duration: 0.2), value: isSourcePanelPresented)
+        .onChange(of: isSourcePanelPresented) { _, isPresented in
+            guard isPresented else { return }
+            sourcePanelPresentationID += 1
+        }
         .onAppear {
             sourcePanelModel.update(
                 sources: videoSources,
