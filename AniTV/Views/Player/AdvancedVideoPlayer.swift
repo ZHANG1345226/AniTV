@@ -70,7 +70,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     @Binding var isSourcePanelPresented: Bool
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
-    var onSourceSelected: ((VideoResource) -> Void)?
+    var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
     
     final class Coordinator: NSObject {
         var pipController: AVPictureInPictureController?

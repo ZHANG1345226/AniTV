@@ -9,6 +9,19 @@
 import SwiftUI
 import AVKit
 
+private let sourceFetchConcurrency = 3
+
+private struct QueuedVideoResource {
+    let sourceIndex: Int
+    let resourceIndex: Int
+    let resource: VideoResource
+}
+
+private struct QueuedVideoResourceKey: Hashable {
+    let sourceIndex: Int
+    let resourceIndex: Int
+}
+
 private struct SourcePanelOverlayContainer: UIViewControllerRepresentable {
     @ObservedObject var model: SourceSwitchPanelModel
 
@@ -135,8 +148,13 @@ struct AnimePlayerContainerView: View {
     @State private var player = AVPlayer()
     @State private var videoSources: [VideoSource] = []
     @State private var isLoading = true
-    @State private var isSourcePanelPresented = false
+    @State private var isSourcePanelPresented = true
     @State private var sourcePanelPresentationID = 0
+    @State private var hasUserSelectedSource = false
+    @State private var queuedVideoResources: [QueuedVideoResource] = []
+    @State private var queuedVideoResourceKeys: Set<QueuedVideoResourceKey> = []
+    @State private var attemptedAutoResourceKeys: Set<QueuedVideoResourceKey> = []
+    @State private var isAttemptingPlayback = false
     @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
@@ -154,7 +172,7 @@ struct AnimePlayerContainerView: View {
                 sort: Int(episodeInfo.sort),
                 availableSources: videoSources,
                 isSourcePanelPresented: $isSourcePanelPresented,
-                onSourceSelected: onSwitch(resource:)
+                onSourceSelected: handleUserSelectedResource
             )
                 .ignoresSafeArea()
 
@@ -195,12 +213,8 @@ struct AnimePlayerContainerView: View {
         .onAppear {
             sourcePanelModel.update(
                 sources: videoSources,
-                onSourceSelected: { resource in
-                    isSourcePanelPresented = false
-                    onSwitch(resource: resource)
-                }
+                onSourceSelected: handleUserSelectedResource
             )
-            onSwitch(resource: VideoResource(resourceName: "", url: "", matchConfig: SelectorSearchConfig.MatchVideoConfig()))
             Task { @MainActor in
                 await doFetch()
             }
@@ -214,7 +228,64 @@ struct AnimePlayerContainerView: View {
         }
     }
 
-    private func onSwitch(resource: VideoResource){
+    private func handleUserSelectedResource(sourceIndex: Int, resourceIndex: Int, resource: VideoResource) {
+        hasUserSelectedSource = true
+        startPlaybackAttempt(
+            sourceIndex: sourceIndex,
+            resourceIndex: resourceIndex,
+            resource: resource,
+            isUserInitiated: true
+        )
+    }
+
+    private func startPlaybackAttempt(
+        sourceIndex: Int,
+        resourceIndex: Int,
+        resource: VideoResource,
+        isUserInitiated: Bool
+    ) {
+        isAttemptingPlayback = true
+        statusObservation?.invalidate()
+        statusObservation = nil
+        sourcePanelModel.beginSelectionAttempt(sourceIndex: sourceIndex, resourceIndex: resourceIndex)
+        onSwitch(resource: resource, isUserInitiated: isUserInitiated)
+    }
+
+    private func attemptNextQueuedResourceIfNeeded() {
+        guard !hasUserSelectedSource, !isAttemptingPlayback else { return }
+
+        while !queuedVideoResources.isEmpty {
+            let next = queuedVideoResources.removeFirst()
+            let key = QueuedVideoResourceKey(sourceIndex: next.sourceIndex, resourceIndex: next.resourceIndex)
+            queuedVideoResourceKeys.remove(key)
+            guard !attemptedAutoResourceKeys.contains(key) else { continue }
+            attemptedAutoResourceKeys.insert(key)
+            startPlaybackAttempt(
+                sourceIndex: next.sourceIndex,
+                resourceIndex: next.resourceIndex,
+                resource: next.resource,
+                isUserInitiated: false
+            )
+            return
+        }
+    }
+
+    private func enqueueResources(_ resources: [VideoResource], forSourceIndex sourceIndex: Int) {
+        for (resourceIndex, resource) in resources.enumerated() {
+            let key = QueuedVideoResourceKey(sourceIndex: sourceIndex, resourceIndex: resourceIndex)
+            guard !queuedVideoResourceKeys.contains(key), !attemptedAutoResourceKeys.contains(key) else { continue }
+            queuedVideoResources.append(
+                QueuedVideoResource(
+                    sourceIndex: sourceIndex,
+                    resourceIndex: resourceIndex,
+                    resource: resource
+                )
+            )
+            queuedVideoResourceKeys.insert(key)
+        }
+    }
+
+    private func onSwitch(resource: VideoResource, isUserInitiated: Bool){
         Task { @MainActor in
             let resolver = TVOSMediaResolver()
             print("解析地址: \(resource.url)")
@@ -226,6 +297,11 @@ struct AnimePlayerContainerView: View {
                 print("🍪 Cookies: \(link.cookieString)")
             }catch {
                 print("❌ 解析失败或超时: \(error.localizedDescription)")
+                isAttemptingPlayback = false
+                sourcePanelModel.markPendingSelectionFailed()
+                if !isUserInitiated {
+                    attemptNextQueuedResourceIfNeeded()
+                }
                 return
             }
                         
@@ -243,9 +319,17 @@ struct AnimePlayerContainerView: View {
                             print("❌ 详细错误信息: \(error.userInfo)")
                         }
                         text = "播放失败"
+                        isAttemptingPlayback = false
+                        sourcePanelModel.markPendingSelectionFailed()
+                        if !isUserInitiated {
+                            attemptNextQueuedResourceIfNeeded()
+                        }
                     } else if item.status == .readyToPlay {
                         print("✅ 准备就绪，可以播放")
                         isLoading = false
+                        isAttemptingPlayback = false
+                        sourcePanelModel.confirmPendingSelection()
+                        isSourcePanelPresented = false
                     } else if item.status == .unknown {
                         print("⏳ 状态未知，正在缓冲...")
                     }
@@ -258,28 +342,79 @@ struct AnimePlayerContainerView: View {
     }
 
     private func doFetch() async -> URL?{
-        for (index, config) in getConfig().enumerated(){
-            print("get lines: \(config.arguments?.name ?? "UNKNOWN SOURCE \(index)")")
-            let a =  SelectorMediaSource(mediaSourceId: "1", config: config, repository: SelectorMediaSourceEpisodeCacheRepository(), client: URLSessionHTTPClient())
-            print(episodeInfo.name)
-            let result = await a.fetch(query: MediaFetchRequest(
-                subjectId: "\(episodeInfo.subjectId)", episodeId: "\(episodeInfo.id)", subjectNameCN: sessionTitle, subjectNames: [sessionTitle], episodeSort: .normal(number: Float(Int(episodeInfo.sort))), episodeName: "\(episodeInfo.nameCN)", episodeEp: .normal(number: Float(Int(episodeInfo.ep)))
-            ))
-            
-            var videoResources: [VideoResource] = []
-            for r in result {
-                videoResources.append(VideoResource(resourceName: r.media.properties.alliance, url: r.media.originalUrl, matchConfig: (config.arguments?.searchConfig.matchVideo)!))
+        let configs = getConfig()
+        let indexedConfigs = Array(configs.enumerated())
+
+        videoSources = configs.enumerated().map { index, config in
+            VideoSource(
+                sourceName: config.arguments?.name ?? "Source \(index)",
+                resources: []
+            )
+        }
+        sourcePanelModel.update(
+            sources: videoSources,
+            onSourceSelected: handleUserSelectedResource
+        )
+        sourcePanelModel.setLoadingSources(Set(indexedConfigs.map(\.0)))
+
+        for batchStart in stride(from: 0, to: indexedConfigs.count, by: sourceFetchConcurrency) {
+            let batchEnd = min(batchStart + sourceFetchConcurrency, indexedConfigs.count)
+            let batch = Array(indexedConfigs[batchStart..<batchEnd])
+
+            let batchResults = await withTaskGroup(of: (Int, [VideoResource]).self) { group in
+                for (index, config) in batch {
+                    group.addTask {
+                        print("get lines: \(config.arguments?.name ?? "UNKNOWN SOURCE \(index)")")
+                        let mediaSource = SelectorMediaSource(
+                            mediaSourceId: "1",
+                            config: config,
+                            repository: SelectorMediaSourceEpisodeCacheRepository(),
+                            client: URLSessionHTTPClient()
+                        )
+                        print(episodeInfo.name)
+                        let result = await mediaSource.fetch(query: MediaFetchRequest(
+                            subjectId: "\(episodeInfo.subjectId)",
+                            episodeId: "\(episodeInfo.id)",
+                            subjectNameCN: sessionTitle,
+                            subjectNames: [sessionTitle],
+                            episodeSort: .normal(number: Float(Int(episodeInfo.sort))),
+                            episodeName: "\(episodeInfo.nameCN)",
+                            episodeEp: .normal(number: Float(Int(episodeInfo.ep)))
+                        ))
+
+                        let resources = result.map {
+                            VideoResource(
+                                resourceName: $0.media.properties.alliance,
+                                url: $0.media.originalUrl,
+                                matchConfig: (config.arguments?.searchConfig.matchVideo)!
+                            )
+                        }
+                        return (index, resources)
+                    }
+                }
+
+                var collected: [(Int, [VideoResource])] = []
+                for await item in group {
+                    collected.append(item)
+                }
+                return collected
             }
-            
-            videoSources.append(VideoSource(sourceName: config.arguments?.name ?? "Source \(index)", resources: videoResources))
+
+            for (index, resources) in batchResults.sorted(by: { $0.0 < $1.0 }) {
+                guard videoSources.indices.contains(index) else { continue }
+                videoSources[index] = VideoSource(
+                    sourceName: videoSources[index].sourceName,
+                    resources: resources
+                )
+                sourcePanelModel.markSourceLoaded(index)
+                enqueueResources(resources, forSourceIndex: index)
+            }
+
             sourcePanelModel.update(
                 sources: videoSources,
-                onSourceSelected: { resource in
-                    isSourcePanelPresented = false
-                    onSwitch(resource: resource)
-                }
+                onSourceSelected: handleUserSelectedResource
             )
-
+            attemptNextQueuedResourceIfNeeded()
         }
         return nil
     }

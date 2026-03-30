@@ -15,34 +15,42 @@ fileprivate enum SourcePanelFocusTarget: Hashable {
     case resource(Int)
 }
 
+fileprivate struct SourcePanelResourceKey: Hashable {
+    let sourceIndex: Int
+    let resourceIndex: Int
+}
+
 @MainActor
 final class SourceSwitchPanelModel: ObservableObject {
     @Published var sources: [VideoSource] = []
     @Published var focusedSourceIndex: Int = 0
-    @Published var playingSourceIndex: Int = 0
-    @Published var playingResourceIndex: Int = 0
+    @Published var committedSourceIndex: Int?
+    @Published var committedResourceIndex: Int?
+    @Published var pendingSourceIndex: Int?
+    @Published var pendingResourceIndex: Int?
+    @Published var loadingSourceIndices: Set<Int> = []
+    @Published fileprivate var failedResourceKeys: Set<SourcePanelResourceKey> = []
 
-    var onSourceSelected: ((VideoResource) -> Void)?
+    var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
 
-    func update(sources: [VideoSource], onSourceSelected: ((VideoResource) -> Void)?) {
+    func update(sources: [VideoSource], onSourceSelected: ((Int, Int, VideoResource) -> Void)?) {
         self.sources = sources
         self.onSourceSelected = onSourceSelected
 
         if sources.isEmpty {
             focusedSourceIndex = 0
-            playingSourceIndex = 0
-            playingResourceIndex = 0
+            committedSourceIndex = nil
+            committedResourceIndex = nil
+            pendingSourceIndex = nil
+            pendingResourceIndex = nil
             return
         }
 
         focusedSourceIndex = min(focusedSourceIndex, sources.count - 1)
-        playingSourceIndex = min(playingSourceIndex, sources.count - 1)
-        let resources = sources[playingSourceIndex].resources
-        if resources.isEmpty {
-            playingResourceIndex = 0
-        } else {
-            playingResourceIndex = min(playingResourceIndex, resources.count - 1)
-        }
+        committedSourceIndex = clampedSourceIndex(committedSourceIndex)
+        pendingSourceIndex = clampedSourceIndex(pendingSourceIndex)
+        committedResourceIndex = clampedResourceIndex(committedResourceIndex, in: committedSourceIndex)
+        pendingResourceIndex = clampedResourceIndex(pendingResourceIndex, in: pendingSourceIndex)
     }
 
     var focusedResources: [VideoResource] {
@@ -56,18 +64,107 @@ final class SourceSwitchPanelModel: ObservableObject {
     }
 
     func isPlayingSource(_ index: Int) -> Bool {
-        index == playingSourceIndex
+        if let pendingSourceIndex {
+            return index == pendingSourceIndex
+        }
+        return index == committedSourceIndex
     }
 
     func isPlayingResource(_ index: Int) -> Bool {
-        index == playingResourceIndex && focusedSourceIndex == playingSourceIndex
+        guard pendingSourceIndex == nil else { return false }
+        return index == committedResourceIndex && focusedSourceIndex == committedSourceIndex
+    }
+
+    func isPendingResource(_ index: Int) -> Bool {
+        index == pendingResourceIndex && focusedSourceIndex == pendingSourceIndex
+    }
+
+    func isFailedResource(_ index: Int) -> Bool {
+        failedResourceKeys.contains(
+            SourcePanelResourceKey(
+                sourceIndex: focusedSourceIndex,
+                resourceIndex: index
+            )
+        )
     }
 
     func selectResource(at index: Int) {
         guard focusedResources.indices.contains(index) else { return }
-        playingSourceIndex = focusedSourceIndex
-        playingResourceIndex = index
-        onSourceSelected?(focusedResources[index])
+        beginSelectionAttempt(sourceIndex: focusedSourceIndex, resourceIndex: index)
+        onSourceSelected?(focusedSourceIndex, index, focusedResources[index])
+    }
+
+    func beginSelectionAttempt(sourceIndex: Int, resourceIndex: Int) {
+        guard sources.indices.contains(sourceIndex),
+              sources[sourceIndex].resources.indices.contains(resourceIndex) else { return }
+        focusedSourceIndex = sourceIndex
+        pendingSourceIndex = sourceIndex
+        pendingResourceIndex = resourceIndex
+        failedResourceKeys.remove(
+            SourcePanelResourceKey(
+                sourceIndex: sourceIndex,
+                resourceIndex: resourceIndex
+            )
+        )
+    }
+
+    func confirmPendingSelection() {
+        if let pendingSourceIndex, let pendingResourceIndex {
+            failedResourceKeys.remove(
+                SourcePanelResourceKey(
+                    sourceIndex: pendingSourceIndex,
+                    resourceIndex: pendingResourceIndex
+                )
+            )
+        }
+        committedSourceIndex = pendingSourceIndex
+        committedResourceIndex = pendingResourceIndex
+        pendingSourceIndex = nil
+        pendingResourceIndex = nil
+    }
+
+    func markPendingSelectionFailed() {
+        if let pendingSourceIndex, let pendingResourceIndex {
+            failedResourceKeys.insert(
+                SourcePanelResourceKey(
+                    sourceIndex: pendingSourceIndex,
+                    resourceIndex: pendingResourceIndex
+                )
+            )
+        }
+        clearPendingSelection()
+    }
+
+    func clearPendingSelection() {
+        pendingSourceIndex = nil
+        pendingResourceIndex = nil
+    }
+
+    var isFocusedSourceLoading: Bool {
+        loadingSourceIndices.contains(focusedSourceIndex)
+    }
+
+    func setLoadingSources(_ indices: Set<Int>) {
+        loadingSourceIndices = indices
+    }
+
+    func markSourceLoaded(_ index: Int) {
+        loadingSourceIndices.remove(index)
+    }
+
+    private func clampedSourceIndex(_ index: Int?) -> Int? {
+        guard let index, sources.indices.contains(index) else { return nil }
+        return index
+    }
+
+    private func clampedResourceIndex(_ index: Int?, in sourceIndex: Int?) -> Int? {
+        guard let sourceIndex,
+              sources.indices.contains(sourceIndex),
+              let index else { return nil }
+
+        let resources = sources[sourceIndex].resources
+        guard resources.indices.contains(index) else { return nil }
+        return index
     }
 }
 
@@ -91,8 +188,8 @@ struct SourceSwitchPanelView: View {
          .padding(.vertical, 26)
          .frame(maxWidth: .infinity)
          .frame(height: sourcePanelHeight)
-         .padding(.horizontal, 22)
-         .padding(.bottom, 22)
+        //  .padding(.horizontal, 22)
+        //  .padding(.bottom, 22)
          .background {
              RoundedRectangle(cornerRadius: 50, style: .continuous)
                  .fill(.ultraThinMaterial)
@@ -116,6 +213,10 @@ struct SourceSwitchPanelView: View {
          .onAppear {
              restoreInitialFocus()
          }
+         .onChange(of: model.sources.count) { _, _ in
+             guard focusedTarget == nil else { return }
+             restoreInitialFocus()
+         }
          .onChange(of: isFocusEntryActive) { _, isActive in
              guard isActive else { return }
              restoreInitialFocus()
@@ -135,10 +236,64 @@ struct SourceSwitchPanelView: View {
     }
 
     private func restoreInitialFocus() {
-        guard model.sources.indices.contains(model.focusedSourceIndex) else { return }
+        guard let target = preferredInitialFocusTarget else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            focusedTarget = .source(model.focusedSourceIndex)
+            switch target {
+            case .source(let index):
+                model.focusSource(at: index)
+            case .resource(let index):
+                if let sourceIndex = preferredSelectedSourceIndex {
+                    model.focusSource(at: sourceIndex)
+                }
+                focusedTarget = nil
+            }
+            focusedTarget = target
         }
+    }
+
+    private var preferredInitialFocusTarget: SourcePanelFocusTarget? {
+        if let sourceIndex = preferredSelectedSourceIndex,
+           let resourceIndex = preferredSelectedResourceIndex {
+            return .resource(resourceIndex)
+        }
+
+        if let sourceIndex = firstSourceWithResourcesIndex {
+            return .source(sourceIndex)
+        }
+
+        guard !model.sources.isEmpty else { return nil }
+        return .source(0)
+    }
+
+    private var preferredSelectedSourceIndex: Int? {
+        if let pendingSourceIndex = model.pendingSourceIndex {
+            return pendingSourceIndex
+        }
+        return model.committedSourceIndex
+    }
+
+    private var preferredSelectedResourceIndex: Int? {
+        if let pendingResourceIndex = model.pendingResourceIndex {
+            return pendingResourceIndex
+        }
+        return model.committedResourceIndex
+    }
+
+    private var firstSourceWithResourcesIndex: Int? {
+        model.sources.firstIndex { !$0.resources.isEmpty }
+    }
+
+    private func resourceIndicator(for index: Int) -> SourcePanelButtonRow.Indicator {
+        if model.isPendingResource(index) {
+            return .loading
+        }
+        if model.isPlayingResource(index) {
+            return .checkmark
+        }
+        if model.isFailedResource(index) {
+            return .failure
+        }
+        return .none
     }
 
     private var focusEntry: some View {
@@ -160,9 +315,9 @@ struct SourceSwitchPanelView: View {
                     ForEach(Array(model.sources.enumerated()), id: \.offset) { index, source in
                         panelButton(
                             title: source.sourceName,
-                            isPlaying: model.isPlayingSource(index),
+                            indicator: model.isPlayingSource(index) ? .checkmark : .none,
                             isFocused: focusedTarget == .source(index),
-                            isInitiallyFocused: index == model.focusedSourceIndex,
+                            isInitiallyFocused: preferredInitialFocusTarget == .source(index),
                             focusScope: sourcePanelFocusScope,
                             focusTarget: SourcePanelFocusTarget.source(index),
                             focusedTarget: $focusedTarget,
@@ -189,50 +344,69 @@ struct SourceSwitchPanelView: View {
         .padding(.trailing, 28)
     }
 
+    @ViewBuilder
     private var resourceColumn: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .center, spacing: 12) {
-                    ForEach(Array(model.focusedResources.enumerated()), id: \.offset) { index, resource in
-                        panelButton(
-                            title: resource.resourceName,
-                            isPlaying: model.isPlayingResource(index),
-                            isFocused: focusedTarget == .resource(index),
-                            isInitiallyFocused: false,
-                            focusScope: sourcePanelFocusScope,
-                            focusTarget: SourcePanelFocusTarget.resource(index),
-                            focusedTarget: $focusedTarget
-                        ) {
-                            model.selectResource(at: index)
+        if model.isFocusedSourceLoading {
+            statusContent {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(1.4)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxHeight: .infinity)
+            .padding(.leading, 28)
+        } else if model.focusedResources.isEmpty {
+            statusContent {
+                Text("暂无线路")
+                    .font(.system(size: 27, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxHeight: .infinity)
+            .padding(.leading, 28)
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .center, spacing: 12) {
+                        ForEach(Array(model.focusedResources.enumerated()), id: \.offset) { index, resource in
+                                panelButton(
+                                    title: resource.resourceName,
+                                    indicator: resourceIndicator(for: index),
+                                    isFocused: focusedTarget == .resource(index),
+                                    isInitiallyFocused: preferredInitialFocusTarget == .resource(index),
+                                    focusScope: sourcePanelFocusScope,
+                                    focusTarget: SourcePanelFocusTarget.resource(index),
+                                    focusedTarget: $focusedTarget
+                            ) {
+                                model.selectResource(at: index)
+                            }
+                            .id(index)
                         }
-                        .id(index)
                     }
-
-                    if model.focusedResources.isEmpty {
-                        placeholder(title: "暂无线路")
+                    .frame(maxWidth: .infinity)
+                }
+                .onChange(of: model.focusedSourceIndex) { _, _ in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(0, anchor: .top)
                     }
                 }
-                .frame(maxWidth: .infinity)
-            }
-            .onChange(of: model.focusedSourceIndex) { _, _ in
-                withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(0, anchor: .top)
+                .onChange(of: model.committedResourceIndex) { _, newValue in
+                    guard let newValue else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
                 }
             }
-            .onChange(of: model.playingResourceIndex) { _, newValue in
-                withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(newValue, anchor: .center)
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxHeight: .infinity)
+            .padding(.leading, 28)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .frame(maxHeight: .infinity)
-        .padding(.leading, 28)
     }
 
     private func panelButton(
         title: String,
-        isPlaying: Bool,
+        indicator: SourcePanelButtonRow.Indicator,
         isFocused: Bool,
         isInitiallyFocused: Bool,
         focusScope: Namespace.ID,
@@ -242,7 +416,7 @@ struct SourceSwitchPanelView: View {
     ) -> some View {
         SourcePanelButtonRow(
             title: title,
-            isPlaying: isPlaying,
+            indicator: indicator,
             isFocused: isFocused,
             isInitiallyFocused: isInitiallyFocused,
             focusScope: focusScope,
@@ -262,11 +436,27 @@ struct SourceSwitchPanelView: View {
         .padding(.horizontal, 18)
         .frame(maxWidth: .infinity)
     }
+
+    private func statusContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack {
+            Spacer(minLength: 0)
+            content()
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
 }
 
 private struct SourcePanelButtonRow: View {
+    enum Indicator {
+        case none
+        case checkmark
+        case loading
+        case failure
+    }
+
     let title: String
-    let isPlaying: Bool
+    let indicator: Indicator
     let isFocused: Bool
     let isInitiallyFocused: Bool
     let focusScope: Namespace.ID
@@ -275,11 +465,26 @@ private struct SourcePanelButtonRow: View {
     let action: () -> Void
 
     var body: some View {
-        let checkmark = Image(systemName: "checkmark")
-            .font(.system(size: 18, weight: .bold))
-            .foregroundStyle(Color.white)
-            .opacity(isPlaying ? 1 : 0)
-            .frame(width: 24, alignment: .center)
+        let leadingIndicator = Group {
+            switch indicator {
+            case .none:
+                Color.clear
+            case .checkmark:
+                Image(systemName: "checkmark")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.white)
+            case .loading:
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(0.9)
+            case .failure:
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.red.opacity(0.95))
+            }
+        }
+        .frame(width: 24, height: 24, alignment: .center)
 
         let label = Text(title)
             .font(.system(size: 29, weight: .bold))
@@ -289,7 +494,7 @@ private struct SourcePanelButtonRow: View {
             .frame(height: 52)
 
         return HStack(spacing: 10) {
-            checkmark
+            leadingIndicator
 
             Button(action: action) {
                 label
