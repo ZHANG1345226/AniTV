@@ -186,7 +186,7 @@ struct SourceSwitchPanelView: View {
     @ObservedObject var model: SourceSwitchPanelModel
     @Namespace private var sourcePanelFocusScope
     @FocusState private var focusedTarget: SourcePanelFocusTarget?
-    @FocusState private var isFocusEntryActive: Bool
+    @State private var focusRestoreID = UUID()
     private let panelShape = RoundedRectangle(cornerRadius: 60, style: .continuous)
 
     var body: some View {
@@ -221,22 +221,15 @@ struct SourceSwitchPanelView: View {
          .environment(\.colorScheme, .light)
          .focusScope(sourcePanelFocusScope)
          .focusSection()
-         .overlay(alignment: .topLeading) {
-             focusEntry
-         }
          .onAppear {
+             focusedTarget = nil
+             focusRestoreID = UUID()
              restoreInitialFocus()
          }
          .onChange(of: model.sources.count) { _, _ in
              guard focusedTarget == nil else { return }
+             focusRestoreID = UUID()
              restoreInitialFocus()
-         }
-         .onChange(of: isFocusEntryActive) { _, isActive in
-             guard isActive else { return }
-             restoreInitialFocus()
-             DispatchQueue.main.async {
-                 isFocusEntryActive = false
-             }
          }
          .onChange(of: focusedTarget) { _, newValue in
              guard let newValue else { return }
@@ -252,6 +245,7 @@ struct SourceSwitchPanelView: View {
     private func restoreInitialFocus() {
         guard let target = preferredInitialFocusTarget else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            focusedTarget = nil
             switch target {
             case .source(let index):
                 model.focusSource(at: index)
@@ -259,9 +253,24 @@ struct SourceSwitchPanelView: View {
                 if let sourceIndex = preferredSelectedSourceIndex {
                     model.focusSource(at: sourceIndex)
                 }
-                focusedTarget = nil
             }
             focusedTarget = target
+        }
+    }
+
+    private func scrollSourceListIfNeeded(with proxy: ScrollViewProxy, anchor: UnitPoint = .center) {
+        let targetIndex = preferredSourceScrollIndex ?? model.focusedSourceIndex
+        guard model.sources.indices.contains(targetIndex) else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(targetIndex, anchor: anchor)
+        }
+    }
+
+    private func scrollResourceListIfNeeded(with proxy: ScrollViewProxy, anchor: UnitPoint = .center) {
+        let targetIndex = preferredResourceScrollIndex
+        guard let targetIndex, model.focusedResources.indices.contains(targetIndex) else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(targetIndex, anchor: anchor)
         }
     }
 
@@ -297,6 +306,26 @@ struct SourceSwitchPanelView: View {
         model.sources.firstIndex { !$0.resources.isEmpty }
     }
 
+    private var preferredSourceScrollIndex: Int? {
+        switch preferredInitialFocusTarget {
+        case .source(let index):
+            return index
+        case .resource:
+            return preferredSelectedSourceIndex
+        case nil:
+            return nil
+        }
+    }
+
+    private var preferredResourceScrollIndex: Int? {
+        switch preferredInitialFocusTarget {
+        case .resource(let index):
+            return index
+        default:
+            return nil
+        }
+    }
+
     private func resourceIndicator(for index: Int) -> SourcePanelButtonRow.Indicator {
         if model.isPendingResource(index) {
             return .loading
@@ -308,18 +337,6 @@ struct SourceSwitchPanelView: View {
             return .failure
         }
         return .none
-    }
-
-    private var focusEntry: some View {
-        Button(action: {}) {
-            Color.clear
-                .frame(width: 1, height: 1)
-        }
-        .buttonStyle(CleanButtonStyle())
-        .focused($isFocusEntryActive)
-        .prefersDefaultFocus(true, in: sourcePanelFocusScope)
-        .opacity(0.001)
-        .allowsHitTesting(false)
     }
 
     private var sourceColumn: some View {
@@ -346,6 +363,12 @@ struct SourceSwitchPanelView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
+            }
+            .onAppear {
+                scrollSourceListIfNeeded(with: proxy)
+            }
+            .onChange(of: focusRestoreID) { _, _ in
+                scrollSourceListIfNeeded(with: proxy)
             }
             .onChange(of: model.focusedSourceIndex) { _, newValue in
                 withAnimation(.easeOut(duration: 0.18)) {
@@ -400,13 +423,27 @@ struct SourceSwitchPanelView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
+                .onAppear {
+                    scrollResourceListIfNeeded(with: proxy)
+                }
+                .onChange(of: focusRestoreID) { _, _ in
+                    scrollResourceListIfNeeded(with: proxy)
+                }
                 .onChange(of: model.focusedSourceIndex) { _, _ in
                     withAnimation(.easeOut(duration: 0.18)) {
                         proxy.scrollTo(0, anchor: .top)
                     }
+                    scrollResourceListIfNeeded(with: proxy)
                 }
                 .onChange(of: model.committedResourceIndex) { _, newValue in
                     guard let newValue else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
+                .onChange(of: model.pendingResourceIndex) { _, newValue in
+                    guard let newValue,
+                          model.focusedSourceIndex == model.pendingSourceIndex else { return }
                     withAnimation(.easeOut(duration: 0.18)) {
                         proxy.scrollTo(newValue, anchor: .center)
                     }

@@ -60,9 +60,6 @@ private final class SourcePanelOverlayViewController: UIViewController {
     }
 
     override var preferredFocusEnvironments: [UIFocusEnvironment] {
-        if let focusableView = findFirstFocusableView(in: hostingController.view) {
-            return [focusableView]
-        }
         return [hostingController.view]
     }
 
@@ -127,20 +124,6 @@ private final class SourcePanelOverlayViewController: UIViewController {
             current = candidate.superview
         }
         return false
-    }
-
-    private func findFirstFocusableView(in rootView: UIView) -> UIView? {
-        if rootView.canBecomeFocused, !rootView.isHidden, rootView.alpha > 0.01 {
-            return rootView
-        }
-
-        for subview in rootView.subviews {
-            if let match = findFirstFocusableView(in: subview) {
-                return match
-            }
-        }
-
-        return nil
     }
 }
 
