@@ -27,7 +27,7 @@ struct AniTVApp: App {
 
         WindowGroup {
             NavigationStack {
-                HomeView()
+                SidebarContentView()
                     .navigationDestination(for: AnimeSubject.self) { anime in
                     AnimeDetailView(anime: anime)
                 }
