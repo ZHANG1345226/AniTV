@@ -39,6 +39,14 @@ enum AniTVDatabase {
     ) STRICT
     """
 
+    static let tmdbBackdropCacheSchema = """
+    CREATE TABLE "tmdb_backdrop_cache" (
+      "tmdb_id" TEXT PRIMARY KEY NOT NULL,
+      "image_url" TEXT NOT NULL,
+      "updated_at" INTEGER NOT NULL
+    ) STRICT
+    """
+
     static func makeDefaultDatabase() throws -> DatabaseQueue {
         let databaseURL = try databaseURL()
         let database = try DatabaseQueue(path: databaseURL.path)
@@ -86,9 +94,67 @@ enum AniTVDatabase {
             )
             .execute(db)
         }
-
+        migrator.registerMigration("Create tmdb_backdrop_cache table") { db in
+            try #sql(
+                """
+                CREATE TABLE "tmdb_backdrop_cache" (
+                  "tmdb_id" TEXT PRIMARY KEY NOT NULL,
+                  "image_url" TEXT NOT NULL,
+                  "updated_at" INTEGER NOT NULL
+                ) STRICT
+                """
+            )
+            .execute(db)
+        }
         try migrator.migrate(database)
         return database
+    }
+
+    static func cachedTMDBBackdropURL(
+        tmdbID: String,
+        maxAge: TimeInterval,
+        in database: any DatabaseWriter
+    ) async throws -> String? {
+        let minUpdatedAt = Int(Date().timeIntervalSince1970 - maxAge)
+        return try await database.read { db in
+            try #sql(
+                """
+                SELECT "image_url"
+                FROM "tmdb_backdrop_cache"
+                WHERE "tmdb_id" = \(bind: tmdbID)
+                  AND "updated_at" >= \(bind: minUpdatedAt)
+                """,
+                as: String.self
+            )
+            .fetchOne(db)
+        }
+    }
+
+    static func upsertTMDBBackdropCache(
+        tmdbID: String,
+        imageURL: String,
+        in database: any DatabaseWriter
+    ) async throws {
+        let now = Int(Date().timeIntervalSince1970)
+        try await database.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO "tmdb_backdrop_cache" (
+                  "tmdb_id",
+                  "image_url",
+                  "updated_at"
+                ) VALUES (?, ?, ?)
+                ON CONFLICT("tmdb_id") DO UPDATE SET
+                  "image_url" = excluded."image_url",
+                  "updated_at" = excluded."updated_at"
+                """,
+                arguments: [
+                    tmdbID,
+                    imageURL,
+                    now
+                ]
+            )
+        }
     }
 
     static func isBangumiDataEmpty(in database: DatabaseQueue) async throws -> Bool {
@@ -101,6 +167,26 @@ enum AniTVDatabase {
             )
             .fetchOne(db) ?? 0
             return count == 0
+        }
+    }
+
+    static func tmdbIDForBangumiID(
+        _ bangumiID: String,
+        in database: any DatabaseWriter
+    ) async throws -> String? {
+        try await database.read { db in
+            try #sql(
+                """
+                SELECT json_extract(site.value, '$.id')
+                FROM "bangumi_data"
+                JOIN json_each("bangumi_data"."sites") AS site
+                WHERE "bangumi_data"."bangumi_id" = \(bind: bangumiID)
+                  AND json_extract(site.value, '$.site') = 'tmdb'
+                LIMIT 1
+                """,
+                as: String.self
+            )
+            .fetchOne(db)
         }
     }
 

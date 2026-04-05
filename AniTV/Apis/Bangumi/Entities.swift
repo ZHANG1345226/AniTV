@@ -29,8 +29,6 @@ struct BgmResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-typealias TrendingResponse = BgmResponse<TrendingSubjectDTO>
-
 // MARK: - Trending Item
 struct TrendingSubjectDTO: Codable, Identifiable, Sendable {
     let count: Int
@@ -121,6 +119,158 @@ struct SubjectImages: Codable, Sendable {
     let medium: String
     let small: String
     let grid: String
+}
+
+// MARK: - Subject Detail DTO (/p1/subjects/{subjectID})
+struct SubjectDetailDTO: Codable, Identifiable, Sendable {
+    let id: Int
+    let airtime: SubjectAirtimeDTO
+    let collection: SubjectCollectionDTO
+    let eps: Int
+    let images: SubjectImages?
+    let info: String
+    let infobox: [InfoboxItemDTO]
+    let interest: SubjectInterestDTO?
+    let locked: Bool
+    let metaTags: [String]
+    let name: String
+    let nameCN: String
+    let nsfw: Bool
+    let platform: SubjectPlatformDTO
+    let rating: SubjectRating
+    let redirect: Int
+    let series: Bool
+    let seriesEntry: Int
+    let summary: String
+    let tags: [SubjectTagDTO]
+    let type: Int
+    let volumes: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case airtime
+        case collection
+        case eps
+        case images
+        case info
+        case infobox
+        case interest
+        case locked
+        case metaTags
+        case name
+        case nameCN
+        case nsfw
+        case platform
+        case rating
+        case redirect
+        case series
+        case seriesEntry
+        case summary
+        case tags
+        case type
+        case volumes
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.airtime = try container.decode(SubjectAirtimeDTO.self, forKey: .airtime)
+        self.collection = try container.decode(SubjectCollectionDTO.self, forKey: .collection)
+        self.eps = try container.decode(Int.self, forKey: .eps)
+        self.images = try container.decodeIfPresent(SubjectImages.self, forKey: .images)
+        self.info = try container.decode(String.self, forKey: .info)
+        self.infobox = try container.decode([InfoboxItemDTO].self, forKey: .infobox)
+        self.interest = try container.decodeIfPresent(SubjectInterestDTO.self, forKey: .interest)
+        self.locked = try container.decode(Bool.self, forKey: .locked)
+        self.metaTags = try container.decode([String].self, forKey: .metaTags)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.nameCN = try container.decode(String.self, forKey: .nameCN)
+        self.nsfw = try container.decode(Bool.self, forKey: .nsfw)
+        self.platform = try container.decode(SubjectPlatformDTO.self, forKey: .platform)
+        self.rating = try container.decode(SubjectRating.self, forKey: .rating)
+        self.redirect = try container.decode(Int.self, forKey: .redirect)
+        self.series = try container.decode(Bool.self, forKey: .series)
+        self.seriesEntry = try container.decode(Int.self, forKey: .seriesEntry)
+        self.summary = try container.decode(String.self, forKey: .summary)
+        self.tags = try container.decode([SubjectTagDTO].self, forKey: .tags)
+        self.type = try container.decode(Int.self, forKey: .type)
+        self.volumes = try container.decode(Int.self, forKey: .volumes)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(airtime, forKey: .airtime)
+        try container.encode(collection, forKey: .collection)
+        try container.encode(eps, forKey: .eps)
+        try container.encodeIfPresent(images, forKey: .images)
+        try container.encode(info, forKey: .info)
+        try container.encode(infobox, forKey: .infobox)
+        try container.encodeIfPresent(interest, forKey: .interest)
+        try container.encode(locked, forKey: .locked)
+        try container.encode(metaTags, forKey: .metaTags)
+        try container.encode(name, forKey: .name)
+        try container.encode(nameCN, forKey: .nameCN)
+        try container.encode(nsfw, forKey: .nsfw)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(redirect, forKey: .redirect)
+        try container.encode(series, forKey: .series)
+        try container.encode(seriesEntry, forKey: .seriesEntry)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(tags, forKey: .tags)
+        try container.encode(type, forKey: .type)
+        try container.encode(volumes, forKey: .volumes)
+    }
+}
+
+struct SubjectAirtimeDTO: Codable, Sendable {
+    let date: String
+    let month: Int
+    let weekday: Int
+    let year: Int
+}
+
+// API schema for SubjectCollection is object and fields are dynamic.
+typealias SubjectCollectionDTO = [String: Int]
+
+struct SubjectInterestDTO: Codable, Sendable {
+    let comment: String
+    let epStatus: Int
+    let id: Int
+    let `private`: Bool
+    let rate: Int
+    let tags: [String]
+    let type: Int
+    let updatedAt: Int
+    let volStatus: Int
+}
+
+struct SubjectPlatformDTO: Codable, Sendable {
+    let alias: String
+    let enableHeader: Bool?
+    let id: Int
+    let order: Int?
+    let searchString: String?
+    let sortKeys: [String]?
+    let type: String
+    let typeCN: String
+    let wikiTpl: String?
+}
+
+struct SubjectTagDTO: Codable, Sendable {
+    let count: Int
+    let name: String
+}
+
+struct InfoboxItemDTO: Codable, Sendable {
+    let key: String
+    let values: [InfoboxValueDTO]
+}
+
+struct InfoboxValueDTO: Codable, Sendable {
+    let k: String?
+    let v: String
 }
 
 

@@ -75,7 +75,7 @@ struct SidebarContentView: View {
                     columnVisibility: $columnVisibility
                 )
                 .navigationDestination(for: AnimeSubject.self) { anime in
-                    AnimeDetailView(anime: anime)
+                    AnimeDetailView(bgmId: anime.id)
                 }
             }
         }

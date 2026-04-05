@@ -17,7 +17,7 @@ struct BangumiRepository {
         type: Int = 2, // 2 = 动画
         limit: Int = 12,
         offset: Int = 0
-    ) async throws -> TrendingResponse {
+    ) async throws -> BgmResponse<TrendingSubjectDTO> {
         
         let queryItems = [
             URLQueryItem(name: "type", value: String(type)),
@@ -48,6 +48,15 @@ struct BangumiRepository {
         return try await client.request(
             url: BangumiAPI.pub.build("v0/episodes"),
             queryItems: queryItems
+        )
+    }
+
+    /// 获取条目
+    /// GET /p1/subjects/{subjectID}
+    func getSubject(subjectID: Int) async throws -> SubjectDetailDTO {
+        try await client.request(
+            url: BangumiAPI.priv.build("p1/subjects/\(subjectID)"),
+            queryItems: []
         )
     }
 }

@@ -8,6 +8,7 @@
 import SwiftUI
 import Combine
 import Kingfisher
+import SQLiteData
 
 struct HeroCarouselView: View {
     @State private var items: [AnimeSubject] = []
@@ -27,7 +28,9 @@ struct HeroCarouselView: View {
     @State private var isUpdatingSelection = false
     @State private var isUpdatingFocus = false
     
-    private let repository = PrivateRepository()
+    @Dependency(\.defaultDatabase) private var database
+    private let bgmRepository = BangumiRepository()
+    private let tmdbRepository = TMDBRepository()
     
     var body: some View {
         ZStack {
@@ -116,10 +119,44 @@ struct HeroCarouselView: View {
 
     func load() async {
         do {
-            let response = try await repository.fetchTrendingSubjects()
+            let response = try await bgmRepository.fetchTrendingSubjects()
+            var mappedItems: [AnimeSubject] = []
+            mappedItems.reserveCapacity(response.data.count)
+
+            for entry in response.data {
+                let subject = entry.subject
+
+                var backdropURL = URL(string: subject.images.large)
+                if let tmdbID = try await AniTVDatabase.tmdbIDForBangumiID(String(subject.id), in: database) {
+                    let tmdbBackdrop = await tmdbRepository.getBackdrop(tmdbID: tmdbID)
+                    if !tmdbBackdrop.isEmpty, let url = URL(string: tmdbBackdrop) {
+                        backdropURL = url
+                    }
+                }
+
+                let anime = AnimeSubject(
+                    id: subject.id,
+                    title: subject.name,
+                    info: subject.info,
+                    score: subject.rating.score,
+                    titleTranslate: TitleTranslate(
+                        en: "",
+                        zhHans: subject.nameCN,
+                        zhHant: ""
+                    ),
+                    type: mapSubjectType(subject.type),
+                    lang: "",
+                    begin: "",
+                    broadcast: "",
+                    end: "",
+                    backdrop: backdropURL
+                )
+                mappedItems.append(anime)
+            }
+
             await MainActor.run {
                 withAnimation {
-                    self.items = response.data
+                    self.items = mappedItems
                     self.isLoading = false
                 }
             }
@@ -128,6 +165,14 @@ struct HeroCarouselView: View {
                 self.exceptionMessage = error.localizedDescription
                 self.isLoading = false
             }
+        }
+    }
+
+    private func mapSubjectType(_ type: Int) -> String {
+        switch type {
+        case 2: return "tv"
+        case 6: return "real"
+        default: return "other"
         }
     }
 }

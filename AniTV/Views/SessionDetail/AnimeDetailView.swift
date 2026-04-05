@@ -8,18 +8,21 @@
 
 import SwiftUI
 import Kingfisher
+import SQLiteData
 
 struct AnimeDetailView: View {
-    let anime: AnimeSubject // 上一轮定义的 DTO
+    let bgmId: Int
+    @Dependency(\.defaultDatabase) private var database
     @State private var showingFullInfo = false
-    
+    @State private var subject: SubjectDetailDTO?
+    @State private var backdropURL: URL?
     @State private var episodes: [BgmEpisodeInfo] = []
     
     var body: some View {
         ZStack {
             //Layer 1: 沉浸式背景图
             GeometryReader { proxy in
-                KFImage(anime.backdrop)
+                KFImage(backdropURL)
                     .resizable()
                     .placeholder {
                         Color.gray.opacity(0.3)
@@ -51,7 +54,7 @@ struct AnimeDetailView: View {
                 HStack(alignment: .bottom, spacing: 60) {
                     VStack(alignment: .leading, spacing: 20) {
                         // 1. 标题
-                        Text(anime.displayName)
+                        Text(displayName)
                             .font(.system(size: 60, weight: .heavy, design: .rounded))
                             .shadow(radius: 10)
                         
@@ -59,7 +62,7 @@ struct AnimeDetailView: View {
 
 
                         HStack(spacing: 20) {
-                            if let starts = anime.startDate {
+                            if let starts = startDate {
                                 var dateString: String {
                                     let formatter = DateFormatter()
                                     formatter.dateFormat = "yyyy年M月"
@@ -67,13 +70,10 @@ struct AnimeDetailView: View {
                                 }
                                 BadgeView(text: dateString)
                             }
-                            BadgeView(text: anime.type.uppercased())
-                            Text(anime.title)
+                            BadgeView(text: typeText.uppercased())
+                            Text(originalTitle)
                         }
                         
-                        let score: Double = 7.99
-                        let count: Int = 2987
-                        let rank: Int = 238
                         ScoreView(
                             score: score,
                             count: count,
@@ -84,7 +84,7 @@ struct AnimeDetailView: View {
                         
                         // 3. 简介 (限制行数)
                         Button(action: { self.showingFullInfo = true }) {
-                            Text(anime.info) // 或者使用 anime.summary 如果有的话
+                            Text(infoText)
                                 .font(.body)
                                 .foregroundColor(.gray)
                                 .lineLimit(3)
@@ -129,8 +129,8 @@ struct AnimeDetailView: View {
                             ForEach(episodes.enumerated(), id: \.element.id) { index, episode in
                                 EpisodeCardView(
                                     episodeInfo: episode,
-                                    sessionTitle: anime.titleTranslate.zhHans,
-                                    stillURL: anime.backdrop // 这里暂时用 backdrop 演示，实际用 still_path
+                                    sessionTitle: displayName,
+                                    stillURL: backdropURL
                                 )
                             }
                             
@@ -145,13 +145,7 @@ struct AnimeDetailView: View {
             focusedField = "playButton"
         }
         .task {
-            do {
-                let repo = BangumiRepository()
-                let response = try await repo.getEpisodes(id: anime.id)
-                episodes = response.data
-            } catch {
-                print("Failed to load episodes: \(error)")
-            }
+            await loadData()
         }
         .sheet(isPresented: $showingFullInfo) {
             VStack(spacing: 30) {
@@ -159,7 +153,7 @@ struct AnimeDetailView: View {
                     .font(.title.bold())
                 
                 ScrollView {
-                    Text(anime.info)
+                    Text(infoText)
                         .font(.body)
                 }
                 
@@ -174,6 +168,86 @@ struct AnimeDetailView: View {
     // 用于管理焦点的命名空间
     @FocusState private var focusedField: String?
     @Namespace var focusNamespace
+
+    private var displayName: String {
+        if let nameCN = subject?.nameCN, !nameCN.isEmpty { return nameCN }
+        return subject?.name ?? "加载中..."
+    }
+
+    private var originalTitle: String {
+        subject?.name ?? ""
+    }
+
+    private var infoText: String {
+        if let summary = subject?.summary, !summary.isEmpty { return summary }
+        if let info = subject?.info, !info.isEmpty { return info }
+        return "暂无简介"
+    }
+
+    private var typeText: String {
+        guard let type = subject?.type else { return "UNKNOWN" }
+        switch type {
+        case 2: return "TV"
+        case 6: return "LIVE"
+        default: return "TYPE\(type)"
+        }
+    }
+
+    private var score: Double {
+        subject?.rating.score ?? 0
+    }
+
+    private var count: Int {
+        subject?.rating.total ?? 0
+    }
+
+    private var rank: Int {
+        subject?.rating.rank ?? 0
+    }
+
+    private var startDate: Date? {
+        guard let dateString = subject?.airtime.date else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: dateString)
+    }
+
+    private func loadData() async {
+        let bgmRepo = BangumiRepository()
+        do {
+            let detail = try await bgmRepo.getSubject(subjectID: bgmId)
+            await MainActor.run {
+                subject = detail
+                // Fallback: use Bangumi large image first.
+                if let large = detail.images?.large {
+                    backdropURL = URL(string: large)
+                }
+            }
+
+            if let tmdbID = try await AniTVDatabase.tmdbIDForBangumiID(String(bgmId), in: database) {
+                let tmdbRepo = TMDBRepository()
+                let backdrop = await tmdbRepo.getBackdrop(tmdbID: tmdbID)
+                await MainActor.run {
+                    // Prefer TMDB backdrop; keep BGM image when TMDB fails.
+                    if !backdrop.isEmpty {
+                        backdropURL = URL(string: backdrop)
+                    }
+                }
+            }
+        } catch {
+            print("Failed to load subject detail: \(error)")
+        }
+
+        do {
+            let response = try await bgmRepo.getEpisodes(id: bgmId)
+            await MainActor.run {
+                episodes = response.data
+            }
+        } catch {
+            print("Failed to load episodes: \(error)")
+        }
+    }
+
 }
 
 // 辅助小组件：标签
@@ -243,20 +317,7 @@ extension SelectorMediaSourceArguments {
 
 struct AnimeDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        AnimeDetailView(anime: AnimeSubject(
-            id: 515759,
-            title: "葬送のフリーレン 第2期",
-            info: "「流泪道别并不适合我们，因为下次再见时会很难为情。」\r\n在勇者欣梅尔一行人击败魔王后的世界中，与欣梅尔等人一同为世界带来和平、活了千年以上的精灵魔法使──芙莉莲。\r\n在面对寿命已尽的欣梅尔之死时，因落下的泪水与心中涌现的情感，踏上了「理解人类之心的旅程」。在旅途中，她与曾由过去伙伴海塔抚养长大的魔法使费伦，以及同为伙伴艾冉的弟子、战士修塔尔克结伴同行，一同朝向灵魂长眠之地前进。\r\n在旅程中，与各种人们相遇交流，并与狡诈的魔族与魔物展开战斗。有时平静温柔，有时无聊琐碎，有时激烈动荡，有时直击心扉……所有的一切、每一个瞬间，都一点一滴地堆叠成三人无可取代的珍贵回忆。而在这趟旅程的终点，究竟等待着他们的会是什么？\r\n魔法使资格测试结束后，他们三人将再度启程──\r\n\r\n\r\n\r\n[简介原文]\r\n「週刊少年サンデー」(小学館)で連載中、山田鐘人(原作)とアベツカサ(作画)による漫画『葬送のフリーレン』。\r\n勇者とそのパーティーによって魔王が倒された“その後”の世界を舞台に、\r\n勇者と共に魔王を打倒した千年以上生きる魔法使い・フリーレンと、彼女が新たに出会う人々の旅路が描かれていく。\r\n“魔王討伐後”という斬新な時系列で展開する胸に刺さるドラマやセリフ、魔法や剣による戦い、\r\n思わず笑ってしまうユーモアなど、キャラクターたちが織り成す物語で、多くの読者を獲得。\r\nこれまでに「マンガ大賞2021」大賞、「第25回手塚治虫文化賞」新生賞、\r\n「第69回(2023年度)小学館漫画賞」、「第48回講談社漫画賞」少年部門など数々の漫画賞を受賞。\r\nそして現在発売中のコミックスは累計部数3200万部を突破！漫画ファンの間で旋風を起こしている。\r\nそれを原作とするTVアニメは2023年9月から2024年3月まで放送され、\r\n国内外で幅広い、数多くのファンを獲得し、大きな反響を呼んだ。\r\nそしてこの度、待望の第2期が2026年1月より日本テレビ系で放送決定！\r\nフリーレンの「人の心を知る旅」が、再び始まる―。",
-            score: 7.99,
-            // 添加 mock 的 rating 数据
-            titleTranslate: TitleTranslate(en: "", zhHans: "葬送的芙莉莲 第二季", zhHant: ""),
-            type: "tv",
-            lang: "ja",
-            begin: "2026-01-16",
-            broadcast: "",
-            end: "",
-            backdrop: URL(string: "https://image.tmdb.org/t/p/original/vnEbPrBGoZItDSv7bfvLBXTpurR.jpg")
-        ))
+        AnimeDetailView(bgmId: 515759)
         .previewDevice("Apple TV 4K (3rd generation)")
     }
 }
