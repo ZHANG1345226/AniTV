@@ -8,17 +8,19 @@
 import SwiftUI
 import Kingfisher
 
-// MARK: - 单卡片视图
+fileprivate enum HeroActionButtonFocus: Hashable {
+    case previousTrigger
+    case play
+    case favorite
+    case info
+}
+
 struct HeroCardView: View {
     let item: AnimeSubject
-    let openAnimeDetail: (Int) -> Void
     
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .bottomLeading) { // ⚠️ 显式对齐：左下角
-            
-                // 1. 背景图
-                // TODO: backdrop 为nil
+            ZStack {
                 KFImage(item.backdrop)
                     .resizable()
                     .placeholder {
@@ -28,7 +30,7 @@ struct HeroCardView: View {
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .ignoresSafeArea()
                     .clipped()
-                
+
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color.black.opacity(0),
@@ -40,100 +42,98 @@ struct HeroCardView: View {
                     startPoint: .center,
                     endPoint: .bottom
                 )
-                
-                // 3. 文字内容区域
-                VStack(alignment: .leading, spacing: 16) {
-                    if(item.endDate == nil){
-                        if let airDate = item.startDate{
-                            NewArrivalPill(text: airDate.formatted(.dateTime.weekday(.wide)))
-                        }
-                    }
-                    
-                    // 标题 (处理长标题)
-                    Text(item.displayName)
-                        .font(.system(size: 64, weight: .heavy)) // tvOS 标题要大
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .shadow(radius: 4)
-                        .fixedSize(horizontal: false, vertical: true) // 防止文字被压缩
-                    // 信息行 (类型 · 评分)
-                    HStack(spacing: 12) {
-//                        Image(systemName: "tv")
-                        Text(item.isMovie ? "劇場版":"新番組")
-                        Text("·")
-                        Text("评分 \(item.scoreString)")
-                            .foregroundStyle(.yellow)
-                        Text("·")
-                        if item.displayOriginalTitle{
-                            Text(item.title)
-                        }
-                    }
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.8))
-                    
-                    // 简介
-                    Text(item.info)
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(2)
-                    
-                    // 按钮组
-                    ActionButtonsView(
-                        anime: item,
-                        openAnimeDetail: openAnimeDetail
-                    )
-                    
-                }
-                .padding(40) // 1. 重要：增加内边距，给渐变留出“淡出”的空间，否则文字边缘会被截断
-                .background(
-                    EllipticalGradient(
-                        gradient: Gradient(colors: [
-                            Color.black.opacity(0.7), // 中间：最黑
-                            Color.black.opacity(0.5), // 中途：半透明
-                            Color.black.opacity(0.0)  // 边缘：完全透明
-                        ]),
-                        center: .center,
-                        startRadiusFraction: 0.0, // 从中心开始
-                        endRadiusFraction: 1.0    // 到边缘结束
-                    )
-                    .blur(radius: 50)
-                )
-
-                .padding(.horizontal, 80 - 30) // 4. 调整外边距 (减去上面加的内边距30，保持视觉位置不变)
-                .padding(.bottom, 200)
-                .frame(maxWidth: proxy.size.width * 0.6, alignment: .leading)
             }
-        }.ignoresSafeArea()
+        }
+        .ignoresSafeArea()
     }
 }
 
 struct ActionButtonsView: View {
-    let buttonHeight: CGFloat = 80 // 定义统一的高度
-    @FocusState var isPlayFocused: Bool // 监听聚焦
+    @FocusState private var focusedButton: HeroActionButtonFocus?
     var anime: AnimeSubject
     let openAnimeDetail: (Int) -> Void
+    let onMoveToPrevious: () -> Void
+    let onMoveToNext: () -> Void
     
     var body: some View {
-        HStack(spacing: 20) {
-            UnifiedActionButton(title: "立即播放", systemImage: "play.fill")
+        ZStack(alignment: .leading) {
+            HStack(spacing: 20) {
+                UnifiedActionButton(
+                    title: "立即播放",
+                    systemImage: "play.fill",
+                    focusedButton: $focusedButton,
+                    focusTarget: .play
+                )
 
-            
-            CircleActionButton(systemImage: "plus")
-            
-            CircleNavigationButton(
-                systemImage: "info.circle",
-                onActivate: { openAnimeDetail(anime.id) }
+                CircleActionButton(
+                    systemImage: "plus",
+                    focusedButton: $focusedButton,
+                    focusTarget: .favorite
+                )
+                
+                CircleNavigationButton(
+                    systemImage: "info.circle",
+                    onActivate: { openAnimeDetail(anime.id) },
+                    focusedButton: $focusedButton,
+                    focusTarget: .info,
+                    onMoveRight: {
+                        onMoveToNext()
+                        DispatchQueue.main.async {
+                            focusedButton = .info
+                        }
+                    }
+                )
+            }
+
+            InvisibleFocusTriggerButton(
+                focusedButton: $focusedButton,
+                focusTarget: .previousTrigger
             )
+            .offset(x: -88)
         }
         .padding()
+        .focusSection()
+        .onChange(of: focusedButton) { _, newValue in
+            guard newValue == .previousTrigger else { return }
+            onMoveToPrevious()
+            DispatchQueue.main.async {
+                focusedButton = .play
+            }
+        }
+    }
+}
+
+struct InvisibleFocusTriggerButton: View {
+    fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
+    fileprivate let focusTarget: HeroActionButtonFocus
+    
+    private var isFocused: Bool {
+        focusedButton.wrappedValue == focusTarget
+    }
+
+    var body: some View {
+        Button(action: {}) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.clear)
+                .overlay {
+                    Text("Prev")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.clear)
+                }
+                .frame(width: 44, height: 80)
+        }
+        .buttonStyle(CleanButtonStyle())
+        .focused(focusedButton, equals: focusTarget)
+        .focusEffectDisabled(true)
     }
 }
 
 struct UnifiedActionButton: View {
-    @FocusState private var isFocused: Bool
     let title: String
     let systemImage: String
     let height: CGFloat = 80
+    fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
+    fileprivate let focusTarget: HeroActionButtonFocus
 
     var body: some View {
         Button(action: { print("Action") }) {
@@ -152,8 +152,12 @@ struct UnifiedActionButton: View {
             .cornerRadius(50)
         }
         .buttonStyle(CleanButtonStyle())   // 🎯 使用自定义样式
-        .focused($isFocused)              // 仍需监听聚焦以手动改变颜色
+        .focused(focusedButton, equals: focusTarget)
         // ❌ 不再需要 .focusEffectDisabled，因为 CleanButtonStyle 已包含
+    }
+    
+    private var isFocused: Bool {
+        focusedButton.wrappedValue == focusTarget
     }
 }
 struct CleanButtonStyle: ButtonStyle {
@@ -169,9 +173,10 @@ struct CleanButtonStyle: ButtonStyle {
 
 // 圆形按钮组件
 struct CircleActionButton: View {
-    @FocusState private var isFocused: Bool
     let systemImage: String
     let size: CGFloat = 80 // 必须与上面高度一致
+    fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
+    fileprivate let focusTarget: HeroActionButtonFocus
 
     var body: some View {
         Button(action: { print("Action") }) {
@@ -186,15 +191,20 @@ struct CircleActionButton: View {
                 .clipShape(Circle())
         }
         .buttonStyle(CleanButtonStyle()) // 核心：干掉系统缩放
-        .focused($isFocused)
+        .focused(focusedButton, equals: focusTarget)
+    }
+    
+    private var isFocused: Bool {
+        focusedButton.wrappedValue == focusTarget
     }
 }
 struct CircleNavigationButton: View {
-    @FocusState private var isFocused: Bool
-    
     let systemImage: String
     let onActivate: () -> Void
     let size: CGFloat = 80
+    fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
+    fileprivate let focusTarget: HeroActionButtonFocus
+    var onMoveRight: (() -> Void)? = nil
     
     var body: some View {
         Button(action: onActivate) {
@@ -209,7 +219,16 @@ struct CircleNavigationButton: View {
                 .clipShape(Circle())
         }
         .buttonStyle(CleanButtonStyle())
-        .focused($isFocused)
+        .focused(focusedButton, equals: focusTarget)
+        .onMoveCommand { direction in
+            if direction == .right {
+                onMoveRight?()
+            }
+        }
+    }
+    
+    private var isFocused: Bool {
+        focusedButton.wrappedValue == focusTarget
     }
 }
 
@@ -226,7 +245,7 @@ struct NewArrivalPill: View {
 }
 
 #Preview {
-    HeroCardView(item: AnimeSubject.mock, openAnimeDetail: { _ in })
+    HeroCardView(item: AnimeSubject.mock)
 }
 
 extension AnimeSubject {

@@ -16,22 +16,41 @@ struct HeroCarouselView: View {
     @State private var selection = 0
     @State private var isLoading = true
     @State private var exceptionMessage = ""
-    
-    // 焦点
-    @FocusState private var focusedIndex: Int?
+    @State private var transitionDirection = 1
     
     // 自动滚动
     private let autoScrollDuration: TimeInterval = 10.0
     @State private var timer = Timer.publish(every: 10.0, on: .main, in: .common).autoconnect()
     @State private var isAutoScrolling = false
     
-    // 🔁 状态同步防循环标志
-    @State private var isUpdatingSelection = false
-    @State private var isUpdatingFocus = false
-    
     @Dependency(\.defaultDatabase) private var database
     private let bgmRepository = BangumiRepository()
     private let tmdbRepository = TMDBRepository()
+    
+    private var currentItem: AnimeSubject? {
+        guard items.indices.contains(selection) else { return nil }
+        return items[selection]
+    }
+    
+    private func moveSelection(by step: Int, isManual: Bool = true) {
+        guard !items.isEmpty else { return }
+        let nextIndex = (selection + step + items.count) % items.count
+        transitionDirection = step >= 0 ? 1 : -1
+        if isManual {
+            isAutoScrolling = false
+        }
+        withAnimation(.easeInOut(duration: 0.45)) {
+            selection = nextIndex
+        }
+    }
+    
+    private var insertionEdge: Edge {
+        transitionDirection >= 0 ? .trailing : .leading
+    }
+    
+    private var removalEdge: Edge {
+        transitionDirection >= 0 ? .leading : .trailing
+    }
     
     var body: some View {
         ZStack {
@@ -42,28 +61,34 @@ struct HeroCarouselView: View {
             } else if items.isEmpty {
                 Text("暂无推荐内容")
             } else {
-                TabView(selection: $selection) {
-                    ForEach(0..<items.count, id: \.self) { index in
-                        HeroCardView(
-                            item: items[index],
-                            openAnimeDetail: openAnimeDetail
-                        )
-                            .tag(index)
-                            .ignoresSafeArea()
-                            .focused($focusedIndex, equals: index)
+                GeometryReader { proxy in
+                    ZStack(alignment: .bottomLeading) {
+                        if let currentItem {
+                            HeroCardView(item: currentItem)
+                                .id(currentItem.id)
+                                .transition(
+                                    .asymmetric(
+                                        insertion: .move(edge: insertionEdge).combined(with: .opacity),
+                                        removal: .move(edge: removalEdge).combined(with: .opacity)
+                                    )
+                                )
+                        }
+
+                        if let currentItem {
+                            carouselOverlay(for: currentItem, width: proxy.size.width)
+                        }
+
+                        VStack {
+                            Spacer()
+                            CustomIndexBar(
+                                numberOfPages: items.count,
+                                currentPage: selection,
+                                duration: autoScrollDuration
+                            )
+                            .padding(.bottom, 40)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                
-                // 指示器
-                VStack {
-                    Spacer()
-                    CustomIndexBar(
-                        numberOfPages: items.count,
-                        currentPage: selection,
-                        duration: autoScrollDuration
-                    )
-                    .padding(.bottom, 40)
                 }
             }
         }
@@ -72,48 +97,74 @@ struct HeroCarouselView: View {
         // 🎯 自动滚动
         .onReceive(timer) { _ in
             guard !items.isEmpty, !isLoading else { return }
-            let nextIndex = (selection + 1) % items.count
             isAutoScrolling = true
-            withAnimation {
-                selection = nextIndex      // ⚠️ 会触发 onChange(of: selection)
-            }completion: {
-                focusedIndex = nextIndex
-            }
+            moveSelection(by: 1, isManual: false)
         }
-        
-        // 🔗 双向同步：selection → focusedIndex
-        .onChange(of: selection) { oldValue, newValue in
-            // 防循环：避免因 focusedIndex 变化再次进入
-            guard !isUpdatingFocus else { return }
-
-            
-            // 定时器重置：仅手动切换时重置
+        .onChange(of: selection) { _, _ in
             if !isAutoScrolling {
-                isUpdatingSelection = true
-                focusedIndex = newValue
-                isUpdatingSelection = false
                 resetTimer()
             } else {
-                // 自动切换完成后清除标记
                 isAutoScrolling = false
             }
         }
-        
-        // 🔗 双向同步：focusedIndex → selection
-        .onChange(of: focusedIndex) { oldValue, newValue in
-            guard let newIndex = newValue,
-                  !isUpdatingSelection else { return }
-            isUpdatingFocus = true
-            selection = newIndex
-            isUpdatingFocus = false
-        }
-        
-        // 🎬 首次加载完成：设置初始焦点
-        .onChange(of: isLoading) { _, loading in
-            if !loading && !items.isEmpty {
-                focusedIndex = 0
+    }
+    
+    @ViewBuilder
+    private func carouselOverlay(for item: AnimeSubject, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if item.endDate == nil, let airDate = item.startDate {
+                NewArrivalPill(text: airDate.formatted(.dateTime.weekday(.wide)))
             }
+            
+            Text(item.displayName)
+                .font(.system(size: 64, weight: .heavy))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .shadow(radius: 4)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            HStack(spacing: 12) {
+                Text(item.isMovie ? "劇場版" : "新番組")
+                Text("·")
+                Text("评分 \(item.scoreString)")
+                    .foregroundStyle(.yellow)
+                if item.displayOriginalTitle {
+                    Text("·")
+                    Text(item.title)
+                }
+            }
+            .font(.headline)
+            .foregroundStyle(.white.opacity(0.8))
+            
+            Text(item.info)
+                .font(.body)
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(2)
+            
+            ActionButtonsView(
+                anime: item,
+                openAnimeDetail: openAnimeDetail,
+                onMoveToPrevious: { moveSelection(by: -1) },
+                onMoveToNext: { moveSelection(by: 1) }
+            )
         }
+        .padding(40)
+        .background(
+            EllipticalGradient(
+                gradient: Gradient(colors: [
+                    Color.black.opacity(0.7),
+                    Color.black.opacity(0.5),
+                    Color.black.opacity(0.0)
+                ]),
+                center: .center,
+                startRadiusFraction: 0.0,
+                endRadiusFraction: 1.0
+            )
+            .blur(radius: 50)
+        )
+        .padding(.horizontal, 50)
+        .padding(.bottom, 200)
+        .frame(maxWidth: width * 0.6, alignment: .leading)
     }
     
     private func resetTimer() {

@@ -285,7 +285,7 @@ struct ProfileSwitcherView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var currentUser: String
 
-    private let users = ["小明", "追番狂魔", "游客模式"]
+    private let users = ["User", "追番狂魔", "游客模式"]
 
     var body: some View {
         NavigationStack {
