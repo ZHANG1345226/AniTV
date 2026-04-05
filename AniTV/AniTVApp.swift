@@ -42,7 +42,7 @@ struct AniTVApp: App {
     var body: some Scene {
 
         WindowGroup {
-            SidebarContentView()
+            AppBootstrapView(database: appDatabase)
         }
         .modelContainer(sharedModelContainer)
     }
