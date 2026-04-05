@@ -17,72 +17,79 @@ enum NavigationCategory: String, Hashable {
 struct SidebarContentView: View {
     @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
     @State private var selectedCategory: NavigationCategory? = .home
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
     @State private var currentUser = "小明"
 
     var body: some View {
-        Group {
+        ZStack {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                List(selection: $selectedCategory) {
+                    Section {
+                        Button {
+                            showingProfileSelection = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(currentUser)
+                                        .font(.headline)
+                                    Text("切换账户")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Section {
+                        NavigationLink(value: NavigationCategory.search) {
+                            Label("搜索", systemImage: "magnifyingglass")
+                        }
+
+                        NavigationLink(value: NavigationCategory.home) {
+                            Label("首页", systemImage: "house")
+                        }
+
+                        NavigationLink(value: NavigationCategory.animeList) {
+                            Label("我的追番", systemImage: "play.tv")
+                        }
+                    }
+
+                    Section {
+                        NavigationLink(value: NavigationCategory.settings) {
+                            Label("设置", systemImage: "gear")
+                        }
+                    }
+                }
+            } detail: {
+                SidebarDetailView(
+                    selectedCategory: $selectedCategory,
+                    columnVisibility: $columnVisibility,
+                    openAnimeDetail: openAnimeDetail
+                )
+            }
+
             if let bgmId = presentedAnimeDetailID {
                 AnimeDetailScreen(
                     bgmId: bgmId,
-                    onClose: { presentedAnimeDetailID = nil }
-                )
-            } else {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    List(selection: $selectedCategory) {
-                        Section {
-                            Button {
-                                showingProfileSelection = true
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "person.crop.circle.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.blue)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(currentUser)
-                                            .font(.headline)
-                                        Text("切换账户")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-                                }
-                                .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        Section {
-                            NavigationLink(value: NavigationCategory.search) {
-                                Label("搜索", systemImage: "magnifyingglass")
-                            }
-
-                            NavigationLink(value: NavigationCategory.home) {
-                                Label("首页", systemImage: "house")
-                            }
-
-                            NavigationLink(value: NavigationCategory.animeList) {
-                                Label("我的追番", systemImage: "play.tv")
-                            }
-                        }
-
-                        Section {
-                            NavigationLink(value: NavigationCategory.settings) {
-                                Label("设置", systemImage: "gear")
-                            }
+                    onClose: {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            columnVisibility = .detailOnly
+                            presentedAnimeDetailID = nil
                         }
                     }
-                } detail: {
-                    SidebarDetailView(
-                        selectedCategory: $selectedCategory,
-                        columnVisibility: $columnVisibility,
-                        openAnimeDetail: openAnimeDetail
-                    )
-                }
+                )
             }
         }
         .sheet(isPresented: $showingProfileSelection) {
@@ -112,25 +119,30 @@ private struct AnimeDetailScreen: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            AnimeDetailView(
-                bgmId: bgmId,
-                openEpisodePlayer: { episodeInfo, sessionTitle in
-                    navigationPath.append(.player(episodeInfo, sessionTitle))
-                }
-            )
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationBarBackButtonHidden(true)
-                .navigationDestination(for: AnimeDetailRoute.self) { route in
-                    switch route {
-                    case .player(let episodeInfo, let sessionTitle):
-                        AnimePlayerContainerView(
-                            episodeInfo: episodeInfo,
-                            sessionTitle: sessionTitle
-                        )
-                        .toolbar(.hidden, for: .navigationBar)
-                        .navigationBarBackButtonHidden(true)
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                AnimeDetailView(
+                    bgmId: bgmId,
+                    openEpisodePlayer: { episodeInfo, sessionTitle in
+                        navigationPath.append(.player(episodeInfo, sessionTitle))
                     }
+                )
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
+            .navigationDestination(for: AnimeDetailRoute.self) { route in
+                switch route {
+                case .player(let episodeInfo, let sessionTitle):
+                    AnimePlayerContainerView(
+                        episodeInfo: episodeInfo,
+                        sessionTitle: sessionTitle
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarBackButtonHidden(true)
                 }
+            }
         }
         .onExitCommand {
             if navigationPath.isEmpty {
