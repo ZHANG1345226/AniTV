@@ -293,15 +293,33 @@ enum AniTVDatabase {
     }
 
     private static func databaseURL() throws -> URL {
-        let appSupportURL = try FileManager.default.url(
-            for: .applicationSupportDirectory,
+        let fileManager = FileManager.default
+        let libraryURL = try fileManager.url(
+            for: .libraryDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         )
-        let directoryURL = appSupportURL.appendingPathComponent("AniTV", isDirectory: true)
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        return directoryURL.appendingPathComponent("AniTV.sqlite")
+
+        let preferredDirectory = libraryURL
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("AniTV", isDirectory: true)
+
+        do {
+            try fileManager.createDirectory(at: preferredDirectory, withIntermediateDirectories: true)
+            return preferredDirectory.appendingPathComponent("AniTV.sqlite")
+        } catch {
+            // Device fallback: some environments may reject creating Application Support.
+            let cachesURL = try fileManager.url(
+                for: .cachesDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            let fallbackDirectory = cachesURL.appendingPathComponent("AniTV", isDirectory: true)
+            try fileManager.createDirectory(at: fallbackDirectory, withIntermediateDirectories: true)
+            return fallbackDirectory.appendingPathComponent("AniTV.sqlite")
+        }
     }
 
     static func logBootstrapError(_ error: Error) {

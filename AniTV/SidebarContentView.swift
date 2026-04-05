@@ -77,6 +77,9 @@ struct SidebarContentView: View {
                 .navigationDestination(for: AnimeSubject.self) { anime in
                     AnimeDetailView(bgmId: anime.id)
                 }
+                .navigationDestination(for: Int.self) { bgmId in
+                    AnimeDetailView(bgmId: bgmId)
+                }
             }
         }
         .sheet(isPresented: $showingProfileSelection) {
@@ -114,14 +117,51 @@ private struct SidebarDetailView: View {
 
 private struct SearchPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    @State private var bgmIDText = ""
+
+    private var parsedBgmID: Int? {
+        let trimmed = bgmIDText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int(trimmed), value > 0 else { return nil }
+        return value
+    }
 
     var body: some View {
-        SidebarPlaceholderView(
-            title: "搜索",
-            systemImage: "magnifyingglass",
-            description: "这里可以接入全局搜索、历史记录和热门推荐。",
-            columnVisibility: $columnVisibility
-        )
+        VStack(spacing: 24) {
+            ContentUnavailableView(
+                "按 BGM ID 跳转",
+                systemImage: "magnifyingglass",
+                description: Text("输入番剧的 bgmId，确认后直接打开详情页。")
+            )
+
+            VStack(spacing: 16) {
+                TextField("例如：515759", text: $bgmIDText)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.white.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .keyboardType(.numberPad)
+                    .frame(maxWidth: 420)
+
+                if let bgmID = parsedBgmID {
+                    NavigationLink(value: bgmID) {
+                        Label("确认并打开详情", systemImage: "arrow.right.circle.fill")
+                            .frame(minWidth: 260)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Label("请输入有效的正整数 bgmId", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button("打开侧边栏") {
+                columnVisibility = .all
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
