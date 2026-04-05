@@ -11,6 +11,7 @@ import Kingfisher
 import SQLiteData
 
 struct HeroCarouselView: View {
+    let openAnimeDetail: (Int) -> Void
     @State private var items: [AnimeSubject] = []
     @State private var selection = 0
     @State private var isLoading = true
@@ -43,7 +44,10 @@ struct HeroCarouselView: View {
             } else {
                 TabView(selection: $selection) {
                     ForEach(0..<items.count, id: \.self) { index in
-                        HeroCardView(item: items[index])
+                        HeroCardView(
+                            item: items[index],
+                            openAnimeDetail: openAnimeDetail
+                        )
                             .tag(index)
                             .ignoresSafeArea()
                             .focused($focusedIndex, equals: index)
@@ -177,6 +181,6 @@ struct HeroCarouselView: View {
     }
 }
 #Preview {
-    HeroCarouselView()
+    HeroCarouselView(openAnimeDetail: { _ in })
         .zIndex(0)
 }

@@ -18,67 +18,70 @@ struct SidebarContentView: View {
     @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
     @State private var selectedCategory: NavigationCategory? = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
     @State private var currentUser = "小明"
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $selectedCategory) {
-                Section {
-                    Button {
-                        showingProfileSelection = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.crop.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.blue)
+        Group {
+            if let bgmId = presentedAnimeDetailID {
+                AnimeDetailScreen(
+                    bgmId: bgmId,
+                    onClose: { presentedAnimeDetailID = nil }
+                )
+            } else {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    List(selection: $selectedCategory) {
+                        Section {
+                            Button {
+                                showingProfileSelection = true
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.crop.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.blue)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(currentUser)
-                                    .font(.headline)
-                                Text("切换账户")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(currentUser)
+                                            .font(.headline)
+                                        Text("切换账户")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+                                }
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Section {
+                            NavigationLink(value: NavigationCategory.search) {
+                                Label("搜索", systemImage: "magnifyingglass")
                             }
 
-                            Spacer()
+                            NavigationLink(value: NavigationCategory.home) {
+                                Label("首页", systemImage: "house")
+                            }
+
+                            NavigationLink(value: NavigationCategory.animeList) {
+                                Label("我的追番", systemImage: "play.tv")
+                            }
                         }
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.plain)
-                }
 
-                Section {
-                    NavigationLink(value: NavigationCategory.search) {
-                        Label("搜索", systemImage: "magnifyingglass")
+                        Section {
+                            NavigationLink(value: NavigationCategory.settings) {
+                                Label("设置", systemImage: "gear")
+                            }
+                        }
                     }
-
-                    NavigationLink(value: NavigationCategory.home) {
-                        Label("首页", systemImage: "house")
-                    }
-
-                    NavigationLink(value: NavigationCategory.animeList) {
-                        Label("我的追番", systemImage: "play.tv")
-                    }
-                }
-
-                Section {
-                    NavigationLink(value: NavigationCategory.settings) {
-                        Label("设置", systemImage: "gear")
-                    }
-                }
-            }
-        } detail: {
-            NavigationStack {
-                SidebarDetailView(
-                    selectedCategory: $selectedCategory,
-                    columnVisibility: $columnVisibility
-                )
-                .navigationDestination(for: AnimeSubject.self) { anime in
-                    AnimeDetailView(bgmId: anime.id)
-                }
-                .navigationDestination(for: Int.self) { bgmId in
-                    AnimeDetailView(bgmId: bgmId)
+                } detail: {
+                    SidebarDetailView(
+                        selectedCategory: $selectedCategory,
+                        columnVisibility: $columnVisibility,
+                        openAnimeDetail: openAnimeDetail
+                    )
                 }
             }
         }
@@ -92,19 +95,49 @@ struct SidebarContentView: View {
             selectedCategoryRawValue = newValue?.rawValue ?? NavigationCategory.home.rawValue
         }
     }
+
+    private func openAnimeDetail(_ bgmId: Int) {
+        presentedAnimeDetailID = bgmId
+    }
+}
+
+private struct AnimeDetailScreen: View {
+    let bgmId: Int
+    let onClose: () -> Void
+
+    var body: some View {
+        AnimeDetailView(bgmId: bgmId)
+            .overlay(alignment: .topLeading) {
+                Button(action: onClose) {
+                    Label("返回", systemImage: "chevron.left")
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.55))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 48)
+                .padding(.top, 48)
+            }
+            .onExitCommand(perform: onClose)
+    }
 }
 
 private struct SidebarDetailView: View {
     @Binding var selectedCategory: NavigationCategory?
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    let openAnimeDetail: (Int) -> Void
 
     var body: some View {
         Group {
             switch selectedCategory ?? .home {
             case .search:
-                SearchPlaceholderView(columnVisibility: $columnVisibility)
+                SearchPlaceholderView(
+                    columnVisibility: $columnVisibility,
+                    openAnimeDetail: openAnimeDetail
+                )
             case .home:
-                HomeView()
+                HomeView(openAnimeDetail: openAnimeDetail)
             case .animeList:
                 AnimeListPlaceholderView(columnVisibility: $columnVisibility)
             case .settings:
@@ -117,6 +150,7 @@ private struct SidebarDetailView: View {
 
 private struct SearchPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    let openAnimeDetail: (Int) -> Void
     @State private var bgmIDText = ""
 
     private var parsedBgmID: Int? {
@@ -144,7 +178,9 @@ private struct SearchPlaceholderView: View {
                     .frame(maxWidth: 420)
 
                 if let bgmID = parsedBgmID {
-                    NavigationLink(value: bgmID) {
+                    Button {
+                        openAnimeDetail(bgmID)
+                    } label: {
                         Label("确认并打开详情", systemImage: "arrow.right.circle.fill")
                             .frame(minWidth: 260)
                     }

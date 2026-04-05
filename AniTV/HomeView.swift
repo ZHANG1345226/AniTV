@@ -9,12 +9,14 @@
 import SwiftUI
 
 struct HomeView: View {
+    let openAnimeDetail: (Int) -> Void
+
     // 模拟数据：假设这是从 SwiftData 查出来的番剧分类
     let categories = ["最近更新", "我的收藏", "热血动漫", "科幻", "日常"]
     
     var body: some View {
         // 1. 最外层：垂直滚动
-        HeroCarouselView()
+        HeroCarouselView(openAnimeDetail: openAnimeDetail)
 //        ScrollView(.vertical, showsIndicators: false) {
 //            LazyVStack(alignment: .leading, spacing: 40) { // spacing是行间距
 //                
@@ -53,5 +55,5 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView(openAnimeDetail: { _ in })
 }

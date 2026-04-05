@@ -11,6 +11,7 @@ import Kingfisher
 // MARK: - 单卡片视图
 struct HeroCardView: View {
     let item: AnimeSubject
+    let openAnimeDetail: (Int) -> Void
     
     var body: some View {
         GeometryReader { proxy in
@@ -77,7 +78,10 @@ struct HeroCardView: View {
                         .lineLimit(2)
                     
                     // 按钮组
-                    ActionButtonsView(anime: item)
+                    ActionButtonsView(
+                        anime: item,
+                        openAnimeDetail: openAnimeDetail
+                    )
                     
                 }
                 .padding(40) // 1. 重要：增加内边距，给渐变留出“淡出”的空间，否则文字边缘会被截断
@@ -107,6 +111,7 @@ struct ActionButtonsView: View {
     let buttonHeight: CGFloat = 80 // 定义统一的高度
     @FocusState var isPlayFocused: Bool // 监听聚焦
     var anime: AnimeSubject
+    let openAnimeDetail: (Int) -> Void
     
     var body: some View {
         HStack(spacing: 20) {
@@ -115,7 +120,10 @@ struct ActionButtonsView: View {
             
             CircleActionButton(systemImage: "plus")
             
-            CircleNavigationButton(systemImage: "info.circle", value: anime)
+            CircleNavigationButton(
+                systemImage: "info.circle",
+                onActivate: { openAnimeDetail(anime.id) }
+            )
         }
         .padding()
     }
@@ -181,16 +189,15 @@ struct CircleActionButton: View {
         .focused($isFocused)
     }
 }
-struct CircleNavigationButton<T: Hashable>: View {
+struct CircleNavigationButton: View {
     @FocusState private var isFocused: Bool
     
     let systemImage: String
-    let value: T          // 1. 新增：要传递的数据（例如 AnimeSubject）
+    let onActivate: () -> Void
     let size: CGFloat = 80
     
     var body: some View {
-        // 2. 将 Button 替换为 NavigationLink
-        NavigationLink(value: value) {
+        Button(action: onActivate) {
             Image(systemName: systemImage)
                 .scaleEffect(isFocused ? 1.15 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: isFocused)
@@ -201,7 +208,6 @@ struct CircleNavigationButton<T: Hashable>: View {
                 .foregroundColor(isFocused ? .black : .white)
                 .clipShape(Circle())
         }
-        // 3. 关键：NavigationLink 也接受 buttonStyle，这能去掉系统自带的卡片背景
         .buttonStyle(CleanButtonStyle())
         .focused($isFocused)
     }
@@ -220,7 +226,7 @@ struct NewArrivalPill: View {
 }
 
 #Preview {
-    HeroCardView( item: AnimeSubject.mock)
+    HeroCardView(item: AnimeSubject.mock, openAnimeDetail: { _ in })
 }
 
 extension AnimeSubject {
