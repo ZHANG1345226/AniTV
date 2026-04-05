@@ -7,9 +7,12 @@
 
 import SwiftUI
 import SwiftData
+import SQLiteData
 
 @main
 struct AniTVApp: App {
+    let appDatabase: DatabaseQueue
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -22,6 +25,19 @@ struct AniTVApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+
+    init() {
+        do {
+            let database = try AniTVDatabase.makeDefaultDatabase()
+            self.appDatabase = database
+
+            prepareDependencies {
+                $0.defaultDatabase = database
+            }
+        } catch {
+            fatalError("Could not create database: \(error)")
+        }
+    }
 
     var body: some Scene {
 

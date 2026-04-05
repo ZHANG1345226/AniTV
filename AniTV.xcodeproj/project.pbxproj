@@ -15,6 +15,8 @@
 		FC702BC02F3B97F9007C6113 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */; };
 		FC772DA72F49890D00FA6E3E /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FC772DA62F49890D00FA6E3E /* SwiftSoup */; };
 		FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = FC8382742F3CC95100AA6131 /* Kingfisher */; };
+		FC9293892F821734005448D4 /* SQLiteData in Frameworks */ = {isa = PBXBuildFile; productRef = FC9293882F821734005448D4 /* SQLiteData */; };
+		FC92938B2F821734005448D4 /* SQLiteDataTestSupport in Frameworks */ = {isa = PBXBuildFile; productRef = FC92938A2F821734005448D4 /* SQLiteDataTestSupport */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +78,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC9293892F821734005448D4 /* SQLiteData in Frameworks */,
 				FC702BB52F3B9734007C6113 /* SDWebImage in Frameworks */,
 				FC702BB72F3B9734007C6113 /* SDWebImageMapKit in Frameworks */,
 				FC8382752F3CC95100AA6131 /* Kingfisher in Frameworks */,
@@ -91,6 +94,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC92938B2F821734005448D4 /* SQLiteDataTestSupport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -160,6 +164,7 @@
 				FC702BBF2F3B97F9007C6113 /* SDWebImageWebPCoder */,
 				FC8382742F3CC95100AA6131 /* Kingfisher */,
 				FC772DA62F49890D00FA6E3E /* SwiftSoup */,
+				FC9293882F821734005448D4 /* SQLiteData */,
 			);
 			productName = AniTV;
 			productReference = FC7024D52F3B656F007C6113 /* AniTV.app */;
@@ -183,6 +188,7 @@
 			);
 			name = AniTVTests;
 			packageProductDependencies = (
+				FC92938A2F821734005448D4 /* SQLiteDataTestSupport */,
 			);
 			productName = AniTVTests;
 			productReference = FC7024E42F3B6571007C6113 /* AniTVTests.xctest */;
@@ -252,6 +258,7 @@
 				FC702BBE2F3B97F9007C6113 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
 				FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 				FC772DA52F49890D00FA6E3E /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				FC9293872F821734005448D4 /* XCRemoteSwiftPackageReference "sqlite-data" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FC7024D62F3B656F007C6113 /* Products */;
@@ -692,6 +699,14 @@
 				minimumVersion = 8.6.2;
 			};
 		};
+		FC9293872F821734005448D4 /* XCRemoteSwiftPackageReference "sqlite-data" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/sqlite-data";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -734,6 +749,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */;
 			productName = Kingfisher;
+		};
+		FC9293882F821734005448D4 /* SQLiteData */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC9293872F821734005448D4 /* XCRemoteSwiftPackageReference "sqlite-data" */;
+			productName = SQLiteData;
+		};
+		FC92938A2F821734005448D4 /* SQLiteDataTestSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC9293872F821734005448D4 /* XCRemoteSwiftPackageReference "sqlite-data" */;
+			productName = SQLiteDataTestSupport;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
