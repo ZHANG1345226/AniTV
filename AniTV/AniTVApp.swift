@@ -26,13 +26,7 @@ struct AniTVApp: App {
     var body: some Scene {
 
         WindowGroup {
-            NavigationStack {
-                SidebarContentView()
-                    .navigationDestination(for: AnimeSubject.self) { anime in
-                    AnimeDetailView(anime: anime)
-                }
-
-            }
+            SidebarContentView()
         }
         .modelContainer(sharedModelContainer)
     }

@@ -69,10 +69,15 @@ struct SidebarContentView: View {
                 }
             }
         } detail: {
-            SidebarDetailView(
-                selectedCategory: $selectedCategory,
-                columnVisibility: $columnVisibility
-            )
+            NavigationStack {
+                SidebarDetailView(
+                    selectedCategory: $selectedCategory,
+                    columnVisibility: $columnVisibility
+                )
+                .navigationDestination(for: AnimeSubject.self) { anime in
+                    AnimeDetailView(anime: anime)
+                }
+            }
         }
         .sheet(isPresented: $showingProfileSelection) {
             ProfileSwitcherView(currentUser: $currentUser)
