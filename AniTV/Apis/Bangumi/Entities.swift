@@ -274,7 +274,7 @@ struct InfoboxValueDTO: Codable, Sendable {
 }
 
 
-struct BgmEpisodeInfo: Codable, Sendable {
+struct BgmEpisodeInfo: Codable, Sendable, Hashable {
     let id: Int
     let subjectId: Int
     let type: Int

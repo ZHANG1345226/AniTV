@@ -101,25 +101,44 @@ struct SidebarContentView: View {
     }
 }
 
+private enum AnimeDetailRoute: Hashable {
+    case player(BgmEpisodeInfo, String)
+}
+
 private struct AnimeDetailScreen: View {
     let bgmId: Int
     let onClose: () -> Void
+    @State private var navigationPath: [AnimeDetailRoute] = []
 
     var body: some View {
-        AnimeDetailView(bgmId: bgmId)
-            .overlay(alignment: .topLeading) {
-                Button(action: onClose) {
-                    Label("返回", systemImage: "chevron.left")
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(.black.opacity(0.55))
-                        .clipShape(Capsule())
+        NavigationStack(path: $navigationPath) {
+            AnimeDetailView(
+                bgmId: bgmId,
+                openEpisodePlayer: { episodeInfo, sessionTitle in
+                    navigationPath.append(.player(episodeInfo, sessionTitle))
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 48)
-                .padding(.top, 48)
+            )
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarBackButtonHidden(true)
+                .navigationDestination(for: AnimeDetailRoute.self) { route in
+                    switch route {
+                    case .player(let episodeInfo, let sessionTitle):
+                        AnimePlayerContainerView(
+                            episodeInfo: episodeInfo,
+                            sessionTitle: sessionTitle
+                        )
+                        .toolbar(.hidden, for: .navigationBar)
+                        .navigationBarBackButtonHidden(true)
+                    }
+                }
+        }
+        .onExitCommand {
+            if navigationPath.isEmpty {
+                onClose()
+            } else {
+                navigationPath.removeLast()
             }
-            .onExitCommand(perform: onClose)
+        }
     }
 }
 

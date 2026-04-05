@@ -12,11 +12,20 @@ import SQLiteData
 
 struct AnimeDetailView: View {
     let bgmId: Int
+    let openEpisodePlayer: (BgmEpisodeInfo, String) -> Void
     @Dependency(\.defaultDatabase) private var database
     @State private var showingFullInfo = false
     @State private var subject: SubjectDetailDTO?
     @State private var backdropURL: URL?
     @State private var episodes: [BgmEpisodeInfo] = []
+
+    init(
+        bgmId: Int,
+        openEpisodePlayer: @escaping (BgmEpisodeInfo, String) -> Void = { _, _ in }
+    ) {
+        self.bgmId = bgmId
+        self.openEpisodePlayer = openEpisodePlayer
+    }
     
     var body: some View {
         ZStack {
@@ -130,7 +139,10 @@ struct AnimeDetailView: View {
                                 EpisodeCardView(
                                     episodeInfo: episode,
                                     sessionTitle: displayName,
-                                    stillURL: backdropURL
+                                    stillURL: backdropURL,
+                                    onOpenPlayer: {
+                                        openEpisodePlayer(episode, displayName)
+                                    }
                                 )
                             }
                             
@@ -317,7 +329,7 @@ extension SelectorMediaSourceArguments {
 
 struct AnimeDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        AnimeDetailView(bgmId: 515759)
+        AnimeDetailView(bgmId: 515759, openEpisodePlayer: { _, _ in })
         .previewDevice("Apple TV 4K (3rd generation)")
     }
 }
