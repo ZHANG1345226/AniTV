@@ -30,7 +30,8 @@ private enum MatchResult {
 }
 
 // MARK: - 解析器主类
-class TVOSMediaResolver: NSObject {
+final class TVOSMediaResolver: NSObject {
+    static let shared = TVOSMediaResolver()
     
     private var webView: AnyObject?
     private var InterceptContentController: AnyObject?
@@ -40,10 +41,15 @@ class TVOSMediaResolver: NSObject {
     private var handledUrls = Set<String>()
     private var currentConfig: SelectorSearchConfig.MatchVideoConfig?
     private var currentPageUrl: String = ""
+
+    private override init() {
+        super.init()
+    }
     
     /// 核心入口方法：输入 URL 和配置，输出 (m3u8, headers, cookies)
     @MainActor
     func resolve(pageUrl: String, config: SelectorSearchConfig.MatchVideoConfig) async throws -> ExtractionResult {
+        cancelResolve()
         self.currentConfig = config
         self.currentPageUrl = pageUrl
         self.handledUrls.removeAll()
@@ -67,6 +73,8 @@ class TVOSMediaResolver: NSObject {
         _ = webView?.perform(Selector(("setCustomUserAgent:")), with: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
         
         return try await withThrowingTaskGroup(of: ExtractionResult.self) { group in
+            defer { cleanup() }
+
             // 任务 1：启动 WebView 提取
             group.addTask {
                 try await withTaskCancellationHandler {
@@ -84,8 +92,7 @@ class TVOSMediaResolver: NSObject {
                 } onCancel: {
                     // 当 Task Group 取消这个任务时，触发此闭包
                     Task { @MainActor [weak self] in
-                        self?.activeContinuation?.resume(throwing: CancellationError())
-                        self?.activeContinuation = nil
+                        self?.finishResolve(with: .failure(CancellationError()))
                     }
                 }
             }
@@ -99,9 +106,14 @@ class TVOSMediaResolver: NSObject {
             // 获取最先完成的结果（成功或超时）
             let result = try await group.next()!
             group.cancelAll() // 取消另一个任务
-            cleanup()
             return result
         }
+    }
+
+    @MainActor
+    func cancelResolve() {
+        finishResolve(with: .failure(CancellationError()))
+        cleanup()
     }
     
     // MARK: - 匹配逻辑 (移植自 KMP matchWebVideo)
@@ -177,8 +189,7 @@ class TVOSMediaResolver: NSObject {
             let cookieString = extractCookies(for: currentPageUrl)
             
             let result = ExtractionResult(m3u8Url: videoUrl, headers: headers, cookieString: cookieString)
-            activeContinuation?.resume(returning: result)
-            activeContinuation = nil
+            finishResolve(with: .success(result))
             return 0
         }
     }
@@ -199,6 +210,19 @@ class TVOSMediaResolver: NSObject {
     private func cleanup() {
         _ = webView?.perform(Selector(("stopLoading")))
         _ = webView?.perform(Selector(("loadHTMLString:baseURL:")), with: "", with: nil)
+    }
+
+    @MainActor
+    private func finishResolve(with result: Result<ExtractionResult, Error>) {
+        guard let continuation = activeContinuation else { return }
+        activeContinuation = nil
+
+        switch result {
+        case .success(let extractionResult):
+            continuation.resume(returning: extractionResult)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
     }
     
     @MainActor
@@ -356,11 +380,19 @@ extension TVOSMediaResolver {
     @objc(webView:didFailProvisionalNavigation:withError:)
     func webView(_ webView: AnyObject, didFailProvisionalNavigation navigation: AnyObject?, withError error: NSError) {
         print("❌ 网页早期加载失败: \(error.localizedDescription) - 代码: \(error.code)")
+        Task { @MainActor in
+            finishResolve(with: .failure(error))
+            cleanup()
+        }
     }
     
     @objc(webView:didFailNavigation:withError:)
     func webView(_ webView: AnyObject, didFail navigation: AnyObject?, withError error: NSError) {
         print("❌ 网页导航过程失败: \(error.localizedDescription)")
+        Task { @MainActor in
+            finishResolve(with: .failure(error))
+            cleanup()
+        }
     }
 }
 

@@ -140,7 +140,9 @@ struct AnimePlayerContainerView: View {
     @State private var attemptedAutoResourceKeys: Set<QueuedVideoResourceKey> = []
     @State private var isAttemptingPlayback = false
     @State private var fetchSourcesTask: Task<Void, Never>?
+    @State private var playbackTask: Task<Void, Never>?
     @State private var lastPlaybackPosition: CMTime?
+    @State private var mediaResolver = TVOSMediaResolver.shared
     @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
@@ -216,6 +218,11 @@ struct AnimePlayerContainerView: View {
             // 退出时清理资源和监听器
             fetchSourcesTask?.cancel()
             fetchSourcesTask = nil
+            playbackTask?.cancel()
+            playbackTask = nil
+            Task { @MainActor in
+                mediaResolver.cancelResolve()
+            }
             lastPlaybackPosition = nil
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -242,6 +249,8 @@ struct AnimePlayerContainerView: View {
         isUserInitiated: Bool
     ) {
         isAttemptingPlayback = true
+        playbackTask?.cancel()
+        playbackTask = nil
         statusObservation?.invalidate()
         statusObservation = nil
         sourcePanelModel.beginSelectionAttempt(sourceIndex: sourceIndex, resourceIndex: resourceIndex)
@@ -283,7 +292,7 @@ struct AnimePlayerContainerView: View {
     }
 
     private func onSwitch(resource: VideoResource, isUserInitiated: Bool){
-        Task { @MainActor in
+        playbackTask = Task { @MainActor in
             let currentTime = player.currentTime()
             let currentItemStatus = player.currentItem?.status
             let validCurrentTime = validatedPlaybackPosition(from: currentTime)
@@ -295,15 +304,18 @@ struct AnimePlayerContainerView: View {
             } else {
                 resumeTime = lastPlaybackPosition
             }
-            let resolver = TVOSMediaResolver()
+            mediaResolver.cancelResolve()
             print("解析地址: \(resource.url)")
             var link: ExtractionResult
             do {
-                link = try await resolver.resolve(pageUrl: resource.url, config: resource.matchConfig)
+                link = try await mediaResolver.resolve(pageUrl: resource.url, config: resource.matchConfig)
                 print("🎉 最终 m3u8 直链: \(link.m3u8Url)")
                 print("📋 请求头: \(link.headers)")
                 print("🍪 Cookies: \(link.cookieString)")
             }catch {
+                if error is CancellationError {
+                    return
+                }
                 print("❌ 解析失败或超时: \(error.localizedDescription)")
                 isAttemptingPlayback = false
                 sourcePanelModel.markPendingSelectionResolveFailed()
