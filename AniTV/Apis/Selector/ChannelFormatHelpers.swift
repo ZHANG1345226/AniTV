@@ -9,11 +9,13 @@ func isPossiblyMovie(title: String) -> Bool {
 
 func convertSpecialEpisodes(name: String, raw: String?) -> EpisodeSort {
     let rawEp = raw.map { EpisodeSort($0) } ?? EpisodeSort(name)
-    if case .normal = rawEp, isPossiblyMovie(title: name) {
-        return EpisodeSort(1) // Movies are always episode 1
-    } else {
+    if case .normal = rawEp {
         return rawEp
     }
+    if isPossiblyMovie(title: name) {
+        return EpisodeSort(1) // Movies are always episode 1
+    }
+    return rawEp
 }
 
 func selectLinksOrNull(selectEpisodeLinks: String, parent: Element) -> [String]? {
