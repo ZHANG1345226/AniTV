@@ -18,16 +18,23 @@ struct BangumiRepository {
         limit: Int = 12,
         offset: Int = 0
     ) async throws -> BgmResponse<TrendingSubjectDTO> {
-        
+        try await fetchBrowserTrendingSubjects(type: type, limit: limit, offset: offset)
+    }
+
+    /// 获取 next.bgm.tv 的热门条目，保留作为备用实现
+    func fetchPrivateTrendingSubjects(
+        type: Int = 2,
+        limit: Int = 12,
+        offset: Int = 0
+    ) async throws -> BgmResponse<TrendingSubjectDTO> {
         let queryItems = [
             URLQueryItem(name: "type", value: String(type)),
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "offset", value: String(offset))
         ]
-        
-        // 调用通用请求方法，指定返回类型为 TrendingResponse
+
         return try await client.request(
-            url:  BangumiAPI.priv.build("p1/trending/subjects"),
+            url: BangumiAPI.priv.build("p1/trending/subjects"),
             queryItems: queryItems
         )
     }
@@ -58,5 +65,62 @@ struct BangumiRepository {
             url: BangumiAPI.priv.build("p1/subjects/\(subjectID)"),
             queryItems: []
         )
+    }
+
+    private func fetchBrowserTrendingSubjects(
+        type: Int,
+        limit: Int,
+        offset: Int
+    ) async throws -> BgmResponse<TrendingSubjectDTO> {
+        let pageSize = 24
+        let page = max(offset / pageSize + 1, 1)
+        let localOffset = max(offset % pageSize, 0)
+        let mediaPath = try browserMediaPath(for: type)
+
+        var components = URLComponents(url: BangumiAPI.web.build("\(mediaPath)/browser/"), resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "sort", value: "trends"),
+            URLQueryItem(name: "page", value: String(page))
+        ]
+
+        guard let url = components?.url else {
+            throw NetworkError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw NetworkError.badServerResponse(statusCode: httpResponse.statusCode)
+        }
+
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw ChiiError(message: "Failed to decode Bangumi browser HTML as UTF-8")
+        }
+
+        let parsed = try BangumiBrowserTrendingParser.parse(html: html, subjectType: type)
+        let sliced = Array(parsed.data.dropFirst(localOffset).prefix(limit))
+        return BgmResponse(data: sliced, total: parsed.total)
+    }
+
+    private func browserMediaPath(for type: Int) throws -> String {
+        switch type {
+        case 1:
+            return "book"
+        case 2:
+            return "anime"
+        case 3:
+            return "music"
+        case 4:
+            return "game"
+        case 6:
+            return "real"
+        default:
+            throw ChiiError(message: "Unsupported Bangumi browser subject type: \(type)")
+        }
     }
 }

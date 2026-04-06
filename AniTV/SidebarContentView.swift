@@ -20,7 +20,7 @@ struct SidebarContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
-    @State private var currentUser = "小明"
+    @State private var currentUser = "User"
 
     var body: some View {
         ZStack {

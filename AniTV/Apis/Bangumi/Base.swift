@@ -10,6 +10,7 @@ import Foundation
 enum BangumiAPI {
   case pub
   case priv
+  case web
 
   var endpoint: URL {
     switch self {
@@ -17,6 +18,8 @@ enum BangumiAPI {
       return URL(string: "https://api.bgm.tv")!
     case .priv:
       return URL(string: "https://next.bgm.tv")!
+    case .web:
+      return URL(string: "https://bgm.tv")!
     }
   }
 

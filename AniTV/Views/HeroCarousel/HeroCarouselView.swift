@@ -25,7 +25,7 @@ struct HeroCarouselView: View {
     
     @Dependency(\.defaultDatabase) private var database
     private let bgmRepository = BangumiRepository()
-    private let tmdbRepository = TMDBRepository()
+    private let tmdbRepository: TMDBRepository = TMDBRepository()
     
     private var currentItem: AnimeSubject? {
         guard items.indices.contains(selection) else { return nil }

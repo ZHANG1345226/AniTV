@@ -27,6 +27,11 @@ struct BgmResponse<T: Codable & Sendable>: Codable, Sendable {
         try container.encode(data, forKey: .data)
         try container.encode(total, forKey: .total)
     }
+
+    init(data: [T], total: Int) {
+        self.data = data
+        self.total = total
+    }
 }
 
 // MARK: - Trending Item
@@ -53,6 +58,11 @@ struct TrendingSubjectDTO: Codable, Identifiable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(count, forKey: .count)
         try container.encode(subject, forKey: .subject)
+    }
+
+    init(count: Int, subject: SlimSubjectDTO) {
+        self.count = count
+        self.subject = subject
     }
 }
 
@@ -99,6 +109,28 @@ struct SlimSubjectDTO: Codable, Identifiable, Sendable {
         try container.encode(nsfw, forKey: .nsfw)
         try container.encode(rating, forKey: .rating)
         try container.encode(images, forKey: .images)
+    }
+
+    init(
+        id: Int,
+        name: String,
+        nameCN: String,
+        type: Int,
+        info: String,
+        locked: Bool,
+        nsfw: Bool,
+        rating: SubjectRating,
+        images: SubjectImages
+    ) {
+        self.id = id
+        self.name = name
+        self.nameCN = nameCN
+        self.type = type
+        self.info = info
+        self.locked = locked
+        self.nsfw = nsfw
+        self.rating = rating
+        self.images = images
     }
 }
 
