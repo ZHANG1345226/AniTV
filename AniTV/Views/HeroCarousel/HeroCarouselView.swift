@@ -10,13 +10,91 @@ import Combine
 import Kingfisher
 import SQLiteData
 
+@MainActor
+final class HeroCarouselStore: ObservableObject {
+    static let shared = HeroCarouselStore()
+
+    @Published var items: [AnimeSubject] = []
+    @Published var selection = 0
+    @Published var isLoading = true
+    @Published var exceptionMessage = ""
+    @Published var transitionDirection = 1
+
+    private var hasLoaded = false
+    private let bgmRepository = BangumiRepository()
+    private let tmdbRepository = TMDBRepository()
+
+    private init() {}
+
+    func loadIfNeeded(database: DatabaseWriter) async {
+        guard !hasLoaded else { return }
+        hasLoaded = true
+        await load(database: database)
+    }
+
+    func load(database: DatabaseWriter) async {
+        isLoading = true
+        exceptionMessage = ""
+
+        do {
+            let response = try await bgmRepository.fetchTrendingSubjects()
+            var mappedItems: [AnimeSubject] = []
+            mappedItems.reserveCapacity(response.data.count)
+
+            for entry in response.data {
+                let subject = entry.subject
+
+                var backdropURL = URL(string: subject.images.large)
+                if let tmdbID = try await AniTVDatabase.tmdbIDForBangumiID(String(subject.id), in: database) {
+                    let tmdbBackdrop = await tmdbRepository.getBackdrop(tmdbID: tmdbID)
+                    if !tmdbBackdrop.isEmpty, let url = URL(string: tmdbBackdrop) {
+                        backdropURL = url
+                    }
+                }
+
+                let anime = AnimeSubject(
+                    id: subject.id,
+                    title: subject.name,
+                    info: subject.info,
+                    score: subject.rating.score,
+                    titleTranslate: TitleTranslate(
+                        en: "",
+                        zhHans: subject.nameCN,
+                        zhHant: ""
+                    ),
+                    type: mapSubjectType(subject.type),
+                    lang: "",
+                    begin: "",
+                    broadcast: "",
+                    end: "",
+                    backdrop: backdropURL
+                )
+                mappedItems.append(anime)
+            }
+
+            withAnimation {
+                items = mappedItems
+                isLoading = false
+            }
+        } catch {
+            exceptionMessage = error.localizedDescription
+            isLoading = false
+            hasLoaded = false
+        }
+    }
+
+    private func mapSubjectType(_ type: Int) -> String {
+        switch type {
+        case 2: return "tv"
+        case 6: return "real"
+        default: return "other"
+        }
+    }
+}
+
 struct HeroCarouselView: View {
     let openAnimeDetail: (Int) -> Void
-    @State private var items: [AnimeSubject] = []
-    @State private var selection = 0
-    @State private var isLoading = true
-    @State private var exceptionMessage = ""
-    @State private var transitionDirection = 1
+    @ObservedObject private var store = HeroCarouselStore.shared
     
     // 自动滚动
     private let autoScrollDuration: TimeInterval = 10.0
@@ -24,41 +102,39 @@ struct HeroCarouselView: View {
     @State private var isAutoScrolling = false
     
     @Dependency(\.defaultDatabase) private var database
-    private let bgmRepository = BangumiRepository()
-    private let tmdbRepository: TMDBRepository = TMDBRepository()
     
     private var currentItem: AnimeSubject? {
-        guard items.indices.contains(selection) else { return nil }
-        return items[selection]
+        guard store.items.indices.contains(store.selection) else { return nil }
+        return store.items[store.selection]
     }
     
     private func moveSelection(by step: Int, isManual: Bool = true) {
-        guard !items.isEmpty else { return }
-        let nextIndex = (selection + step + items.count) % items.count
-        transitionDirection = step >= 0 ? 1 : -1
+        guard !store.items.isEmpty else { return }
+        let nextIndex = (store.selection + step + store.items.count) % store.items.count
+        store.transitionDirection = step >= 0 ? 1 : -1
         if isManual {
             isAutoScrolling = false
         }
         withAnimation(.easeInOut(duration: 0.45)) {
-            selection = nextIndex
+            store.selection = nextIndex
         }
     }
     
     private var insertionEdge: Edge {
-        transitionDirection >= 0 ? .trailing : .leading
+        store.transitionDirection >= 0 ? .trailing : .leading
     }
     
     private var removalEdge: Edge {
-        transitionDirection >= 0 ? .leading : .trailing
+        store.transitionDirection >= 0 ? .leading : .trailing
     }
     
     var body: some View {
         ZStack {
-            if isLoading {
+            if store.isLoading {
                 ProgressView().tint(.white)
-            } else if !exceptionMessage.isEmpty {
-                Text(exceptionMessage)
-            } else if items.isEmpty {
+            } else if !store.exceptionMessage.isEmpty {
+                Text(store.exceptionMessage)
+            } else if store.items.isEmpty {
                 Text("暂无推荐内容")
             } else {
                 GeometryReader { proxy in
@@ -81,8 +157,8 @@ struct HeroCarouselView: View {
                         VStack {
                             Spacer()
                             CustomIndexBar(
-                                numberOfPages: items.count,
-                                currentPage: selection,
+                                numberOfPages: store.items.count,
+                                currentPage: store.selection,
                                 duration: autoScrollDuration
                             )
                             .padding(.bottom, 40)
@@ -92,15 +168,15 @@ struct HeroCarouselView: View {
                 }
             }
         }
-        .task { await load() }
+        .task { await store.loadIfNeeded(database: database) }
         
         // 🎯 自动滚动
         .onReceive(timer) { _ in
-            guard !items.isEmpty, !isLoading else { return }
+            guard !store.items.isEmpty, !store.isLoading else { return }
             isAutoScrolling = true
             moveSelection(by: 1, isManual: false)
         }
-        .onChange(of: selection) { _, _ in
+        .onChange(of: store.selection) { _, _ in
             if !isAutoScrolling {
                 resetTimer()
             } else {
@@ -170,65 +246,6 @@ struct HeroCarouselView: View {
     private func resetTimer() {
         timer.upstream.connect().cancel()
         timer = Timer.publish(every: autoScrollDuration, on: .main, in: .common).autoconnect()
-    }
-
-    func load() async {
-        do {
-            let response = try await bgmRepository.fetchTrendingSubjects()
-            var mappedItems: [AnimeSubject] = []
-            mappedItems.reserveCapacity(response.data.count)
-
-            for entry in response.data {
-                let subject = entry.subject
-
-                var backdropURL = URL(string: subject.images.large)
-                if let tmdbID = try await AniTVDatabase.tmdbIDForBangumiID(String(subject.id), in: database) {
-                    let tmdbBackdrop = await tmdbRepository.getBackdrop(tmdbID: tmdbID)
-                    if !tmdbBackdrop.isEmpty, let url = URL(string: tmdbBackdrop) {
-                        backdropURL = url
-                    }
-                }
-
-                let anime = AnimeSubject(
-                    id: subject.id,
-                    title: subject.name,
-                    info: subject.info,
-                    score: subject.rating.score,
-                    titleTranslate: TitleTranslate(
-                        en: "",
-                        zhHans: subject.nameCN,
-                        zhHant: ""
-                    ),
-                    type: mapSubjectType(subject.type),
-                    lang: "",
-                    begin: "",
-                    broadcast: "",
-                    end: "",
-                    backdrop: backdropURL
-                )
-                mappedItems.append(anime)
-            }
-
-            await MainActor.run {
-                withAnimation {
-                    self.items = mappedItems
-                    self.isLoading = false
-                }
-            }
-        } catch {
-            await MainActor.run {
-                self.exceptionMessage = error.localizedDescription
-                self.isLoading = false
-            }
-        }
-    }
-
-    private func mapSubjectType(_ type: Int) -> String {
-        switch type {
-        case 2: return "tv"
-        case 6: return "real"
-        default: return "other"
-        }
     }
 }
 #Preview {
