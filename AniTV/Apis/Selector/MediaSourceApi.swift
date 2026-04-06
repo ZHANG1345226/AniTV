@@ -405,14 +405,27 @@ struct MediaSourceEngineHelpers {
     }
 
     static func getSearchKeyword(_ subjectName: String, _ removeSpecial: Bool, _ useOnlyFirstWord: Bool) -> String {
-        var keyword = subjectName
+        let finalName: String
         if removeSpecial {
-            keyword = keyword.replacingOccurrences(of: "[^\\p{L}\\p{N}\\s]", with: "", options: .regularExpression)
+            finalName = MediaListFilters.removeSpecials(
+                subjectName,
+                removeWhitespace: false,
+                replaceNumbers: false,
+                removeMarkers: true
+            )
+        } else {
+            finalName = subjectName
         }
+
         if useOnlyFirstWord {
-            keyword = keyword.components(separatedBy: .whitespacesAndNewlines).first ?? keyword
+            if !finalName.contains(" ") {
+                return finalName
+            }
+            let firstWord = finalName.prefix { $0 != " " }
+            return firstWord.isEmpty ? finalName : String(firstWord)
         }
-        return keyword
+
+        return finalName
     }
 }
 
@@ -495,12 +508,31 @@ class MediaListFilterContext {
 
 struct MediaListFilters {
     static let ContainsSubjectName = MediaListFilter { context, media in
-        context.subjectNamesWithoutSpecial.contains { subjectName in
-            let originalTitle = removeSpecials(media.subjectName, removeWhitespace: true, replaceNumbers: true)
+        let originalTitle = removeSpecials(media.subjectName, removeWhitespace: true, replaceNumbers: true)
+        let matchDetails = context.subjectNamesWithoutSpecial.map { subjectName in
             let exactlyContains = originalTitle.lowercased().contains(subjectName.lowercased())
-            let fuzzyMatches = StringMatcher.calculateMatchRate(originalTitle, subjectName) >= 80
-            return exactlyContains || fuzzyMatches
+            let matchRate = StringMatcher.calculateMatchRate(originalTitle, subjectName)
+            let fuzzyMatches = matchRate >= 80
+            return (
+                subjectName: subjectName,
+                exactlyContains: exactlyContains,
+                matchRate: matchRate,
+                matched: exactlyContains || fuzzyMatches
+            )
         }
+        if let matchedDetail = matchDetails.first(where: \.matched) {
+            logger.info {
+                "[ContainsSubjectName] matched media='\(media.subjectName)' normalized='\(originalTitle)' subject='\(matchedDetail.subjectName)' contains=\(matchedDetail.exactlyContains) matchRate=\(matchedDetail.matchRate)"
+            }
+            return true
+        }
+        logger.info {
+            let reasons = matchDetails.map { detail in
+                "\(detail.subjectName): contains=\(detail.exactlyContains), matchRate=\(detail.matchRate), fuzzyMatches=\(detail.matchRate >= 80)"
+            }.joined(separator: " | ")
+            return "[ContainsSubjectName] not matched media='\(media.subjectName)' normalized='\(originalTitle)' reasons=[\(reasons)]"
+        }
+        return false
     }
     static let ContainsEpisodeSort = MediaListFilter { context, media in
         guard let range = media.episodeRange else { return false }

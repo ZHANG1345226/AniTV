@@ -610,6 +610,50 @@
             endingLineNumber = "114"
             landmarkName = "DefaultSelectorMediaSourceEngine"
             landmarkType = "3">
+            <Locations>
+               <Location
+                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - d4b97134ac6fed27"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.deinit"
+                  moduleName = "AniTV.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - 9af78960f9951eb7"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.__isolated_deallocating_deinit"
+                  moduleName = "AniTV.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "19881FFD-064E-4B9B-9E4D-80554E6A7535 - e54e980599e203da"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AniTV.DefaultSelectorMediaSourceEngine.__deallocating_deinit"
+                  moduleName = "AniTV.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/feiranyang/Developer/AniTV/AniTV/AniTV/Apis/Selector/SelectorMediaSource.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -767,6 +811,54 @@
             startingLineNumber = "281"
             endingLineNumber = "281"
             landmarkName = "selectMedia(episodes:config:query:mediaSourceId:subjectName:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "9CEC8741-F56A-439D-BAD0-04A5E10AB783"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "AniTV/Apis/Selector/SelectorMediaSource.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "489"
+            endingLineNumber = "489"
+            landmarkName = "search(searchConfig:query:mediaSourceId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "DFDD86C8-A0B8-478F-A503-DE740E0DE5DD"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "AniTV/Apis/Selector/SelectorMediaSource.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "163"
+            endingLineNumber = "163"
+            landmarkName = "searchSubjects(searchUrl:subjectName:useOnlyFirstWord:removeSpecial:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "07A27084-DE5E-4D65-9292-87F78CAA53A0"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "AniTV/Apis/Selector/SelectorMediaSource.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "169"
+            endingLineNumber = "169"
+            landmarkName = "searchSubjects(searchUrl:subjectName:useOnlyFirstWord:removeSpecial:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
