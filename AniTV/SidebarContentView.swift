@@ -23,6 +23,7 @@ struct SidebarContentView: View {
     @State private var showingProfileSelection = false
     @State private var currentUser = "User"
     @FocusState private var focusedCategory: NavigationCategory?
+    @FocusState private var isProfileButtonFocused: Bool
     @Namespace private var sidebarFocusScope
 
     var body: some View {
@@ -36,22 +37,40 @@ struct SidebarContentView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "person.crop.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(.white)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(currentUser)
-                                        .font(.headline)
-                                    Text("切换账户")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    ZStack(alignment: .leading) {
+                                        Text(currentUser)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                            .opacity(isProfileButtonFocused ? 0 : 1)
+
+                                        Text(currentUser)
+                                            .font(.headline)
+                                            .foregroundStyle(.white)
+                                            .opacity(isProfileButtonFocused ? 1 : 0)
+                                    }
+
+                                    if isProfileButtonFocused {
+                                        Text("切换账户")
+                                            .font(.caption)
+                                            .foregroundStyle(.white.opacity(0.72))
+                                            .transition(
+                                                .opacity.combined(with: .move(edge: .top))
+                                            )
+                                    }
                                 }
+                                .frame(maxHeight: .infinity, alignment: .center)
 
                                 Spacer()
                             }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .padding(.vertical, 6)
+                            .animation(.easeInOut(duration: 0.22), value: isProfileButtonFocused)
                         }
                         .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 40, trailing: 0))
+                        .focused($isProfileButtonFocused)
                     }
 
                     Section {
@@ -72,15 +91,15 @@ struct SidebarContentView: View {
                         }
                         .prefersDefaultFocus(selectedCategory == .animeList, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .animeList)
-                    }
-
-                    Section {
+//                    }.padding(.top,40)
+//
+//                    Section {
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
                         .prefersDefaultFocus(selectedCategory == .settings, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .settings)
-                    }
+                    }.padding(.top, 60)
                 }
                 .focusScope(sidebarFocusScope)
             } detail: {
