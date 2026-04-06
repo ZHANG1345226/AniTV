@@ -2,7 +2,7 @@
 //  SidebarContentView.swift
 //  AniTV
 //
-//  Created by Codex on 2026/4/4.
+//  Created by Codex on 2426/4/4.
 //
 
 import SwiftUI
@@ -15,12 +15,15 @@ enum NavigationCategory: String, Hashable {
 }
 
 struct SidebarContentView: View {
+    @Environment(\.resetFocus) private var resetFocus
     @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
     @State private var selectedCategory: NavigationCategory? = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
     @State private var currentUser = "User"
+    @FocusState private var focusedCategory: NavigationCategory?
+    @Namespace private var sidebarFocusScope
 
     var body: some View {
         ZStack {
@@ -48,28 +51,38 @@ struct SidebarContentView: View {
                             .padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 40, trailing: 0))
                     }
 
                     Section {
                         NavigationLink(value: NavigationCategory.search) {
                             Label("搜索", systemImage: "magnifyingglass")
                         }
+                        .prefersDefaultFocus(selectedCategory == .search, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .search)
 
                         NavigationLink(value: NavigationCategory.home) {
                             Label("首页", systemImage: "house")
                         }
+                        .prefersDefaultFocus(selectedCategory == .home, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .home)
 
                         NavigationLink(value: NavigationCategory.animeList) {
                             Label("我的追番", systemImage: "play.tv")
                         }
+                        .prefersDefaultFocus(selectedCategory == .animeList, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .animeList)
                     }
 
                     Section {
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
+                        .prefersDefaultFocus(selectedCategory == .settings, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .settings)
                     }
                 }
+                .focusScope(sidebarFocusScope)
             } detail: {
                 SidebarDetailView(
                     selectedCategory: $selectedCategory,
@@ -97,14 +110,29 @@ struct SidebarContentView: View {
         }
         .onAppear {
             selectedCategory = NavigationCategory(rawValue: selectedCategoryRawValue) ?? .home
+            requestSidebarFocus()
         }
         .onChange(of: selectedCategory) { _, newValue in
             selectedCategoryRawValue = newValue?.rawValue ?? NavigationCategory.home.rawValue
+        }
+        .onChange(of: columnVisibility) { oldValue, newValue in
+            guard oldValue == .detailOnly, newValue != .detailOnly else { return }
+            requestSidebarFocus()
         }
     }
 
     private func openAnimeDetail(_ bgmId: Int) {
         presentedAnimeDetailID = bgmId
+    }
+
+    private func requestSidebarFocus() {
+        Task { @MainActor in
+            focusedCategory = nil
+            await Task.yield()
+            guard columnVisibility != .detailOnly else { return }
+            focusedCategory = selectedCategory ?? .home
+            resetFocus(in: sidebarFocusScope)
+        }
     }
 }
 
@@ -206,7 +234,7 @@ private struct SearchPlaceholderView: View {
                     .background(.white.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .keyboardType(.numberPad)
-                    .frame(maxWidth: 420)
+                    .frame(maxWidth: 424)
 
                 if let bgmID = parsedBgmID {
                     Button {
