@@ -263,22 +263,58 @@ final class TVOSMediaResolver: NSObject {
         
         let injectionScript = """
         (function() {
+            if (window.__AniTVInterceptInstalled) return;
+            window.__AniTVInterceptInstalled = true;
+
+            function postUrl(value) {
+                if (!value) return;
+                try {
+                    const url = typeof value === 'string' ? value : value.url || value.href || String(value);
+                    if (!url) return;
+                    window.webkit.messageHandlers.AniTVIntercept.postMessage(url);
+                } catch (e) {}
+            }
+
             const oldFetch = window.fetch;
             window.fetch = function() {
-                const url = arguments[0];
-                window.webkit.messageHandlers.AniTVIntercept.postMessage(url);
+                postUrl(arguments[0]);
                 return oldFetch.apply(this, arguments);
             };
+
             const oldOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url) {
-                window.webkit.messageHandlers.AniTVIntercept.postMessage(url);
+                postUrl(url);
                 return oldOpen.apply(this, arguments);
             };
-            const origSetSrc = HTMLMediaElement.prototype.setAttribute;
-            HTMLMediaElement.prototype.setAttribute = function(name, value) {
-                if (name === 'src') window.webkit.messageHandlers.AniTVIntercept.postMessage(value);
-                return origSetSrc.apply(this, arguments);
+
+            const originalElementSetAttribute = Element.prototype.setAttribute;
+            Element.prototype.setAttribute = function(name, value) {
+                if (name === 'src' || name === 'href') {
+                    postUrl(value);
+                }
+                return originalElementSetAttribute.apply(this, arguments);
             };
+
+            function hookSrcProperty(proto) {
+                if (!proto) return;
+                const descriptor = Object.getOwnPropertyDescriptor(proto, 'src');
+                if (!descriptor || !descriptor.set) return;
+                Object.defineProperty(proto, 'src', {
+                    configurable: true,
+                    enumerable: descriptor.enumerable,
+                    get: descriptor.get
+                        ? function() { return descriptor.get.call(this); }
+                        : function() { return this.getAttribute('src'); },
+                    set: function(value) {
+                        postUrl(value);
+                        descriptor.set.call(this, value);
+                    }
+                });
+            }
+
+            hookSrcProperty(typeof HTMLMediaElement !== 'undefined' ? HTMLMediaElement.prototype : null);
+            hookSrcProperty(typeof HTMLSourceElement !== 'undefined' ? HTMLSourceElement.prototype : null);
+            hookSrcProperty(typeof HTMLIFrameElement !== 'undefined' ? HTMLIFrameElement.prototype : null);
         })();
         """
         
