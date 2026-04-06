@@ -14,6 +14,7 @@ import UIKit
 @objc private protocol PrivateWKUserContentController {
     func addUserScript(_ script: AnyObject)
     func addScriptMessageHandler(_ scriptMessageHandler: AnyObject, name: String)
+    @objc optional func removeScriptMessageHandler(forName name: String)
 }
 
 @objc private protocol PrivateWKWebViewConfiguration {
@@ -73,7 +74,7 @@ final class TVOSMediaResolver: NSObject {
         _ = webView?.perform(Selector(("setCustomUserAgent:")), with: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
         
         return try await withThrowingTaskGroup(of: ExtractionResult.self) { group in
-            defer { cleanup() }
+            defer { teardownWebView() }
 
             // 任务 1：启动 WebView 提取
             group.addTask {
@@ -113,7 +114,7 @@ final class TVOSMediaResolver: NSObject {
     @MainActor
     func cancelResolve() {
         finishResolve(with: .failure(CancellationError()))
-        cleanup()
+        teardownWebView()
     }
     
     // MARK: - 匹配逻辑 (移植自 KMP matchWebVideo)
@@ -210,6 +211,40 @@ final class TVOSMediaResolver: NSObject {
     private func cleanup() {
         _ = webView?.perform(Selector(("stopLoading")))
         _ = webView?.perform(Selector(("loadHTMLString:baseURL:")), with: "", with: nil)
+    }
+
+    @MainActor
+    private func teardownWebView() {
+        guard let webView else { return }
+
+        _ = webView.perform(Selector(("stopLoading")))
+        _ = webView.perform(Selector(("loadHTMLString:baseURL:")), with: "", with: nil)
+        _ = webView.perform(Selector(("setNavigationDelegate:")), with: nil)
+
+        if let config = webView.value(forKey: "configuration") as? NSObject,
+           let contentController = config.value(forKey: "userContentController") as? NSObject {
+            let removeHandlerSelector = Selector(("removeScriptMessageHandlerForName:"))
+            if contentController.responds(to: removeHandlerSelector) {
+                _ = contentController.perform(removeHandlerSelector, with: "AniTVIntercept")
+            }
+        }
+
+        if let view = webView as? UIView {
+            view.removeFromSuperview()
+        }
+
+        let closeSelector = Selector(("close"))
+        let privateCloseSelector = Selector(("_close"))
+        if webView.responds(to: closeSelector) {
+            _ = webView.perform(closeSelector)
+        } else if webView.responds(to: privateCloseSelector) {
+            _ = webView.perform(privateCloseSelector)
+        }
+
+        self.webView = nil
+        self.currentConfig = nil
+        self.currentPageUrl = ""
+        self.handledUrls.removeAll()
     }
 
     @MainActor
