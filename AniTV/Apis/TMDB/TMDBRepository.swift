@@ -37,9 +37,11 @@ struct TMDBRepository {
 
     // tmdbID example: "movie/12345" or "tv/12345"
     func getBackdrop(tmdbID: String) async -> String {
+        let normalizedTMDBID = normalizeTMDBID(tmdbID)
+
         do {
             if let cached = try await AniTVDatabase.cachedTMDBBackdropURL(
-                tmdbID: tmdbID,
+                tmdbID: normalizedTMDBID,
                 maxAge: TMDBConfig.cacheMaxAge,
                 in: database
             ) {
@@ -55,7 +57,7 @@ struct TMDBRepository {
             return ""
         }
 
-        guard let url = URL(string: "\(TMDBConfig.baseURL)/\(tmdbID)/images?api_key=\(apiKey)") else {
+        guard let url = URL(string: "\(TMDBConfig.baseURL)/\(normalizedTMDBID)/images?api_key=\(apiKey)") else {
             return ""
         }
 
@@ -81,7 +83,7 @@ struct TMDBRepository {
 
             do {
                 try await AniTVDatabase.upsertTMDBBackdropCache(
-                    tmdbID: tmdbID,
+                    tmdbID: normalizedTMDBID,
                     imageURL: finalURL,
                     in: database
                 )
@@ -104,5 +106,14 @@ struct TMDBRepository {
         if normalized == "zh" || normalized == "cn" || normalized == "zh-cn" { return 2 }
         if normalized == "en" { return 1 }
         return 0
+    }
+
+    private func normalizeTMDBID(_ tmdbID: String) -> String {
+        let components = tmdbID
+            .split(separator: "/")
+            .map(String.init)
+
+        guard components.count >= 2 else { return tmdbID }
+        return "\(components[0])/\(components[1])"
     }
 }

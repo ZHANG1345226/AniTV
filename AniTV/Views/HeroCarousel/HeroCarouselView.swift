@@ -21,8 +21,7 @@ final class HeroCarouselStore: ObservableObject {
     @Published var transitionDirection = 1
 
     private var hasLoaded = false
-    private let bgmRepository = BangumiRepository()
-    private let tmdbRepository = TMDBRepository()
+    private let trendingService = TrendingService()
 
     private init() {}
 
@@ -37,20 +36,13 @@ final class HeroCarouselStore: ObservableObject {
         exceptionMessage = ""
 
         do {
-            let response = try await bgmRepository.fetchTrendingSubjects()
+            let response = try await trendingService.fetchTrendingSubjectsWithBackdrop(database: database)
             var mappedItems: [AnimeSubject] = []
-            mappedItems.reserveCapacity(response.data.count)
+            mappedItems.reserveCapacity(response.count)
 
-            for entry in response.data {
-                let subject = entry.subject
-
-                var backdropURL = URL(string: subject.images.large)
-                if let tmdbID = try await AniTVDatabase.tmdbIDForBangumiID(String(subject.id), in: database) {
-                    let tmdbBackdrop = await tmdbRepository.getBackdrop(tmdbID: tmdbID)
-                    if !tmdbBackdrop.isEmpty, let url = URL(string: tmdbBackdrop) {
-                        backdropURL = url
-                    }
-                }
+            for entry in response {
+                let subject = entry.subject.subject
+                let backdropURL = URL(string: entry.backdropImage)
 
                 let anime = AnimeSubject(
                     id: subject.id,

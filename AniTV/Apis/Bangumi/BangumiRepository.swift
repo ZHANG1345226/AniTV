@@ -67,6 +67,44 @@ struct BangumiRepository {
         )
     }
 
+    func fetchLargeImages(subjectIDs: [Int]) async throws -> [Int: String] {
+        guard !subjectIDs.isEmpty else { return [:] }
+
+        var request = URLRequest(url: BangumiAPI.pub.build("v0/graphql"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
+        request.httpBody = try JSONEncoder().encode(
+            BangumiGraphQLRequest(query: makeSubjectImagesQuery(subjectIDs: subjectIDs))
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw NetworkError.badServerResponse(statusCode: httpResponse.statusCode)
+        }
+
+        let decoded = try JSONDecoder().decode(
+            BangumiGraphQLResponse<[String: BangumiGraphQLSubjectNode?]>.self,
+            from: data
+        )
+
+        if let errors = decoded.errors, !errors.isEmpty, decoded.data == nil {
+            throw ChiiError(message: errors.map(\.message).joined(separator: "\n"))
+        }
+
+        var imagesBySubjectID: [Int: String] = [:]
+        if let data = decoded.data {
+            for node in data.values {
+                guard let node, !node.images.large.isEmpty else { continue }
+                imagesBySubjectID[node.id] = node.images.large
+            }
+        }
+
+        return imagesBySubjectID
+    }
+
     private func fetchBrowserTrendingSubjects(
         type: Int,
         limit: Int,
@@ -122,5 +160,23 @@ struct BangumiRepository {
         default:
             throw ChiiError(message: "Unsupported Bangumi browser subject type: \(type)")
         }
+    }
+
+    private func makeSubjectImagesQuery(subjectIDs: [Int]) -> String {
+        let subjectSelections = subjectIDs.map { subjectID in
+            "subject_\(subjectID): subject(id: \(subjectID)) { ...SubjectFragment }"
+        }
+        .joined(separator: "\n")
+
+        return """
+        fragment SubjectFragment on Subject {
+          id
+          images { large }
+        }
+
+        query TrendingSubjectImages {
+        \(subjectSelections)
+        }
+        """
     }
 }
