@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - Root Response
-struct BgmResponse<T: Codable & Sendable>: Codable, Sendable {
+struct BgmPagedResponse<T: Codable & Sendable>: Codable, Sendable {
     let data: [T]
     let total: Int
     

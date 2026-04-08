@@ -9,12 +9,12 @@ import Foundation
 import SwiftSoup
 
 enum BangumiBrowserTrendingParser {
-    static func parse(html: String, subjectType: Int) throws -> BgmResponse<TrendingSubjectDTO> {
+    static func parse(html: String, subjectType: Int) throws -> BgmPagedResponse<TrendingSubjectDTO> {
         let document = try SwiftSoup.parse(html)
         let nodes = try document.select("#browserItemList > li").array()
         let items = try nodes.compactMap { try parseItem($0, subjectType: subjectType) }
         let total = try parseTotal(document: document, fallbackPageSize: max(nodes.count, 1), fallbackCount: items.count)
-        return BgmResponse(data: items, total: total)
+        return BgmPagedResponse(data: items, total: total)
     }
 
     private static func parseItem(_ node: Element, subjectType: Int) throws -> TrendingSubjectDTO? {

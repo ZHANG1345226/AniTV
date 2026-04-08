@@ -17,7 +17,7 @@ struct BangumiRepository {
         type: Int = 2, // 2 = 动画
         limit: Int = 12,
         offset: Int = 0
-    ) async throws -> BgmResponse<TrendingSubjectDTO> {
+    ) async throws -> BgmPagedResponse<TrendingSubjectDTO> {
         try await fetchBrowserTrendingSubjects(type: type, limit: limit, offset: offset)
     }
 
@@ -26,7 +26,7 @@ struct BangumiRepository {
         type: Int = 2,
         limit: Int = 12,
         offset: Int = 0
-    ) async throws -> BgmResponse<TrendingSubjectDTO> {
+    ) async throws -> BgmPagedResponse<TrendingSubjectDTO> {
         let queryItems = [
             URLQueryItem(name: "type", value: String(type)),
             URLQueryItem(name: "limit", value: String(limit)),
@@ -44,7 +44,7 @@ struct BangumiRepository {
         limit: Int = 100,
         offset: Int = 0,
         id: Int
-    ) async throws -> BgmResponse<BgmEpisodeInfo> {
+    ) async throws -> BgmPagedResponse<BgmEpisodeInfo> {
         let queryItems = [
             URLQueryItem(name: "type", value: String(type)),
             URLQueryItem(name: "limit", value: String(limit)),
@@ -71,7 +71,7 @@ struct BangumiRepository {
         type: Int,
         limit: Int,
         offset: Int
-    ) async throws -> BgmResponse<TrendingSubjectDTO> {
+    ) async throws -> BgmPagedResponse<TrendingSubjectDTO> {
         let pageSize = 24
         let page = max(offset / pageSize + 1, 1)
         let localOffset = max(offset % pageSize, 0)
@@ -104,7 +104,7 @@ struct BangumiRepository {
 
         let parsed = try BangumiBrowserTrendingParser.parse(html: html, subjectType: type)
         let sliced = Array(parsed.data.dropFirst(localOffset).prefix(limit))
-        return BgmResponse(data: sliced, total: parsed.total)
+        return BgmPagedResponse(data: sliced, total: parsed.total)
     }
 
     private func browserMediaPath(for type: Int) throws -> String {
