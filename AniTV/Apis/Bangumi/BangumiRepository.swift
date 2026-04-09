@@ -105,6 +105,54 @@ struct BangumiRepository {
         return imagesBySubjectID
     }
 
+    func fetchTimelineSubjectDetails(subjectIDs: [Int]) async throws -> [Int: BangumiGraphQLTimelineSubjectNode] {
+        let uniqueSubjectIDs = Array(Set(subjectIDs)).sorted()
+        guard !uniqueSubjectIDs.isEmpty else { return [:] }
+
+        var subjectsByID: [Int: BangumiGraphQLTimelineSubjectNode] = [:]
+        for batch in uniqueSubjectIDs.chunked(into: 40) {
+            let query = makeTimelineSubjectDetailsQuery(subjectIDs: batch)
+            let variables = Dictionary(
+                uniqueKeysWithValues: batch.enumerated().map { index, subjectID in
+                    ("id\(index)", subjectID)
+                }
+            )
+
+            var request = URLRequest(url: BangumiAPI.pub.build("v0/graphql"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
+            request.httpBody = try JSONEncoder().encode(
+                BangumiGraphQLRequest(query: query, variables: variables)
+            )
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                throw NetworkError.badServerResponse(statusCode: httpResponse.statusCode)
+            }
+
+            let decoded = try JSONDecoder().decode(
+                BangumiGraphQLResponse<[String: BangumiGraphQLTimelineSubjectNode?]>.self,
+                from: data
+            )
+
+            if let errors = decoded.errors, !errors.isEmpty, decoded.data == nil {
+                throw ChiiError(message: errors.map { $0.message }.joined(separator: "\n"))
+            }
+
+            if let data = decoded.data {
+                for node in data.values {
+                    guard let node else { continue }
+                    subjectsByID[node.id] = node
+                }
+            }
+        }
+
+        return subjectsByID
+    }
+
     private func fetchBrowserTrendingSubjects(
         type: Int,
         limit: Int,
@@ -178,5 +226,63 @@ struct BangumiRepository {
         \(subjectSelections)
         }
         """
+    }
+
+    private func makeTimelineSubjectDetailsQuery(subjectIDs: [Int]) -> String {
+        let variableDefinitions = subjectIDs.enumerated().map { index, _ in
+            "$id\(index): Int!"
+        }
+        .joined(separator: ", ")
+
+        let subjectSelections = subjectIDs.enumerated().map { index, _ in
+            "s\(index): subject(id: $id\(index)) { ...SubjectFragment }"
+        }
+        .joined(separator: "\n")
+
+        return """
+        fragment Ep on Episode {
+          id
+          airdate
+          name
+          name_cn
+          sort
+        }
+
+        fragment SubjectFragment on Subject {
+          id
+          images {
+            common
+            grid
+            large
+            medium
+            small
+          }
+          name
+          name_cn
+          episodes: episodes(limit: 100) { ...Ep }
+        }
+
+        query TimelineSubjectDetails(\(variableDefinitions)) {
+        \(subjectSelections)
+        }
+        """
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0, !isEmpty else { return isEmpty ? [] : [self] }
+
+        var result: [[Element]] = []
+        result.reserveCapacity((count + size - 1) / size)
+
+        var index = startIndex
+        while index < endIndex {
+            let end = self.index(index, offsetBy: size, limitedBy: endIndex) ?? endIndex
+            result.append(Array(self[index..<end]))
+            index = end
+        }
+
+        return result
     }
 }

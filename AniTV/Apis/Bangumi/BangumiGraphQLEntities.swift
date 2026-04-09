@@ -9,6 +9,12 @@ import Foundation
 
 struct BangumiGraphQLRequest: Encodable, Sendable {
     let query: String
+    let variables: [String: Int]?
+
+    init(query: String, variables: [String: Int]? = nil) {
+        self.query = query
+        self.variables = variables
+    }
 }
 
 struct BangumiGraphQLResponse<T: Decodable & Sendable>: Decodable, Sendable {
@@ -64,5 +70,55 @@ struct BangumiGraphQLSubjectImages: Decodable, Sendable {
     nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.large = try container.decode(String.self, forKey: .large)
+    }
+}
+
+struct BangumiGraphQLTimelineEpisodeNode: Decodable, Sendable {
+    let id: Int
+    let airdate: String
+    let name: String
+    let nameCN: String
+    let sort: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case airdate
+        case name
+        case nameCN = "name_cn"
+        case sort
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.airdate = try container.decode(String.self, forKey: .airdate)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.nameCN = try container.decode(String.self, forKey: .nameCN)
+        self.sort = try container.decode(Double.self, forKey: .sort)
+    }
+}
+
+struct BangumiGraphQLTimelineSubjectNode: Decodable, Sendable {
+    let id: Int
+    let images: SubjectImages
+    let name: String
+    let nameCN: String
+    let episodes: [BangumiGraphQLTimelineEpisodeNode]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case images
+        case name
+        case nameCN = "name_cn"
+        case episodes
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.images = try container.decode(SubjectImages.self, forKey: .images)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.nameCN = try container.decode(String.self, forKey: .nameCN)
+        self.episodes = try container.decode([BangumiGraphQLTimelineEpisodeNode].self, forKey: .episodes)
     }
 }
