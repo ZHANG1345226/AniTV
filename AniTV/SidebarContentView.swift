@@ -180,7 +180,44 @@ struct SidebarContentView: View {
 }
 
 private enum AnimeDetailRoute: Hashable {
-    case player(BgmEpisodeInfo, String)
+    case player([BgmEpisodeInfo], Int, String)
+}
+
+private struct AnimeEpisodePlayerScreen: View {
+    let episodes: [BgmEpisodeInfo]
+    let initialEpisodeID: Int
+    let sessionTitle: String
+
+    @State private var currentEpisodeIndex: Int = 0
+
+    private var currentEpisode: BgmEpisodeInfo? {
+        guard episodes.indices.contains(currentEpisodeIndex) else { return nil }
+        return episodes[currentEpisodeIndex]
+    }
+
+    var body: some View {
+        Group {
+            if let currentEpisode {
+                AnimePlayerContainerView(
+                    episodeInfo: currentEpisode,
+                    sessionTitle: sessionTitle,
+                    onPlaybackCompleted: playNextEpisodeIfPossible
+                )
+                .id(currentEpisode.id)
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+        }
+        .onAppear {
+            currentEpisodeIndex = episodes.firstIndex(where: { $0.id == initialEpisodeID }) ?? 0
+        }
+    }
+
+    private func playNextEpisodeIfPossible() {
+        let nextIndex = currentEpisodeIndex + 1
+        guard episodes.indices.contains(nextIndex) else { return }
+        currentEpisodeIndex = nextIndex
+    }
 }
 
 private struct AnimeDetailScreen: View {
@@ -198,8 +235,8 @@ private struct AnimeDetailScreen: View {
 
                 AnimeDetailView(
                     bgmId: bgmId,
-                    openEpisodePlayer: { episodeInfo, sessionTitle in
-                        navigationPath.append(.player(episodeInfo, sessionTitle))
+                    openEpisodePlayer: { episodes, episodeInfo, sessionTitle in
+                        navigationPath.append(.player(episodes, episodeInfo.id, sessionTitle))
                     }
                 )
             }
@@ -209,9 +246,10 @@ private struct AnimeDetailScreen: View {
             .navigationBarBackButtonHidden(true)
             .navigationDestination(for: AnimeDetailRoute.self) { route in
                 switch route {
-                case .player(let episodeInfo, let sessionTitle):
-                    AnimePlayerContainerView(
-                        episodeInfo: episodeInfo,
+                case .player(let episodes, let episodeID, let sessionTitle):
+                    AnimeEpisodePlayerScreen(
+                        episodes: episodes,
+                        initialEpisodeID: episodeID,
                         sessionTitle: sessionTitle
                     )
                     .toolbar(.hidden, for: .navigationBar)

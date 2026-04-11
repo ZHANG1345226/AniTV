@@ -12,7 +12,7 @@ import SQLiteData
 
 struct AnimeDetailView: View {
     let bgmId: Int
-    let openEpisodePlayer: (BgmEpisodeInfo, String) -> Void
+    let openEpisodePlayer: ([BgmEpisodeInfo], BgmEpisodeInfo, String) -> Void
     @Dependency(\.defaultDatabase) private var database
     @State private var showingFullInfo = false
     @State private var subject: SubjectDetailDTO?
@@ -21,7 +21,7 @@ struct AnimeDetailView: View {
 
     init(
         bgmId: Int,
-        openEpisodePlayer: @escaping (BgmEpisodeInfo, String) -> Void = { _, _ in }
+        openEpisodePlayer: @escaping ([BgmEpisodeInfo], BgmEpisodeInfo, String) -> Void = { _, _, _ in }
     ) {
         self.bgmId = bgmId
         self.openEpisodePlayer = openEpisodePlayer
@@ -104,7 +104,8 @@ struct AnimeDetailView: View {
                         // 4. 操作按钮组
                         HStack(spacing: 20) {
                             Button(action: {
-                                print("Play Tapped")
+                                guard let firstEpisode = episodes.first else { return }
+                                openEpisodePlayer(episodes, firstEpisode, displayName)
      
                             }) {
                                 Label("开始播放", systemImage: "play.fill")
@@ -141,7 +142,7 @@ struct AnimeDetailView: View {
                                     sessionTitle: displayName,
                                     stillURL: backdropURL,
                                     onOpenPlayer: {
-                                        openEpisodePlayer(episode, displayName)
+                                        openEpisodePlayer(episodes, episode, displayName)
                                     }
                                 )
                             }
@@ -329,7 +330,7 @@ extension SelectorMediaSourceArguments {
 
 struct AnimeDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        AnimeDetailView(bgmId: 515759, openEpisodePlayer: { _, _ in })
+        AnimeDetailView(bgmId: 515759, openEpisodePlayer: { _, _, _ in })
         .previewDevice("Apple TV 4K (3rd generation)")
     }
 }

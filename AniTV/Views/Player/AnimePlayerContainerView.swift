@@ -150,6 +150,7 @@ struct AnimePlayerContainerView: View {
     
     let episodeInfo: BgmEpisodeInfo
     let sessionTitle: String
+    var onPlaybackCompleted: (() -> Void)? = nil
     @State private var text = "正在解析番剧源..."
 
     var body: some View {
@@ -197,6 +198,11 @@ struct AnimePlayerContainerView: View {
         .onChange(of: isSourcePanelPresented) { _, isPresented in
             guard isPresented else { return }
             sourcePanelPresentationID += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+            guard let finishedItem = notification.object as? AVPlayerItem,
+                  finishedItem === player.currentItem else { return }
+            onPlaybackCompleted?()
         }
         .onAppear {
             hasResolvedAutoPlayback = false
