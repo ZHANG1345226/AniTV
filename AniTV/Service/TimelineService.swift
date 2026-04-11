@@ -10,7 +10,7 @@ import SQLiteData
 
 typealias TimelineDayMap = [String: [TimelineEpisodeEntry]]
 
-struct TimelineEpisodeEntry: Identifiable, Sendable {
+struct TimelineEpisodeEntry: Identifiable, Codable, Sendable {
     let dateKey: String
     let airingTimestamp: Int
     let anilistID: Int?
@@ -54,6 +54,15 @@ struct TimelineService: Sendable {
     ) async throws -> TimelineDayMap {
         let calendar = TimelineCalendar.make()
         let window = TimelineWindow(calendar: calendar, now: now, daysBefore: daysBefore, daysAfter: daysAfter)
+        let cacheKey = TimelineCacheKey.make(calendar: calendar, now: now, daysBefore: daysBefore, daysAfter: daysAfter)
+
+        if let cachedMap = try await AniTVDatabase.cachedTimelineMap(
+            cacheKey: cacheKey,
+            maxAge: 3_600,
+            in: database
+        ) {
+            return cachedMap
+        }
 
         let fetchedAniListItems = try await anilistClient.fetchTimeline(window: window)
         let bangumiRows = try await AniTVDatabase.fetchAllBangumiDataRows(in: database)
@@ -111,7 +120,7 @@ struct TimelineService: Sendable {
             }
         }
 
-        return TimelineMapBuilder.build(
+        let builtMap = TimelineMapBuilder.build(
             aniListItems: resolvedAniListItems.items,
             missingItems: missingItems,
             bangumiIndex: bangumiIndex,
@@ -119,6 +128,14 @@ struct TimelineService: Sendable {
             episodesByBangumiID: mergedEpisodeCache,
             window: window
         )
+
+        try await AniTVDatabase.upsertTimelineMapCache(
+            cacheKey: cacheKey,
+            map: builtMap,
+            in: database
+        )
+
+        return builtMap
     }
 }
 
@@ -127,6 +144,13 @@ private enum TimelineCalendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         return calendar
+    }
+}
+
+private enum TimelineCacheKey {
+    static func make(calendar: Calendar, now: Date, daysBefore: Int, daysAfter: Int) -> String {
+        let dayKey = now.timelineDayKey(calendar: calendar)
+        return "timeline:\(dayKey):\(daysBefore):\(daysAfter)"
     }
 }
 

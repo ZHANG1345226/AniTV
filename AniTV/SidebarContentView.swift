@@ -11,6 +11,7 @@ enum NavigationCategory: String, Hashable {
     case search
     case home
     case animeList
+    case timeline
     case settings
 }
 
@@ -22,6 +23,9 @@ struct SidebarContentView: View {
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
     @State private var currentUser = "User"
+    @State private var timelineFocusRestoreToken = 0
+    @State private var timelineLastFocusedEntryID: String?
+    @State private var timelinePendingRestoreEntryID: String?
     @FocusState private var focusedCategory: NavigationCategory?
     @FocusState private var isProfileButtonFocused: Bool
     @Namespace private var sidebarFocusScope
@@ -91,9 +95,13 @@ struct SidebarContentView: View {
                         }
                         .prefersDefaultFocus(selectedCategory == .animeList, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .animeList)
-//                    }.padding(.top,40)
-//
-//                    Section {
+
+                        NavigationLink(value: NavigationCategory.timeline) {
+                            Label("时间线", systemImage: "calendar")
+                        }
+                        .prefersDefaultFocus(selectedCategory == .timeline, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .timeline)
+
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
@@ -106,19 +114,35 @@ struct SidebarContentView: View {
                 SidebarDetailView(
                     selectedCategory: $selectedCategory,
                     columnVisibility: $columnVisibility,
+                    timelineFocusRestoreToken: timelineFocusRestoreToken,
+                    timelineLastFocusedEntryID: $timelineLastFocusedEntryID,
+                    timelinePendingRestoreEntryID: $timelinePendingRestoreEntryID,
                     openAnimeDetail: openAnimeDetail
                 )
             }
+            .disabled(presentedAnimeDetailID != nil)
+            .allowsHitTesting(presentedAnimeDetailID == nil)
 
             if let bgmId = presentedAnimeDetailID {
                 AnimeDetailScreen(
                     bgmId: bgmId,
                     onClose: {
+                        let shouldRestoreTimelineFocus = selectedCategory == .timeline
+                        let restoreEntryID = timelineLastFocusedEntryID
                         var transaction = Transaction()
                         transaction.disablesAnimations = true
                         withTransaction(transaction) {
                             columnVisibility = .detailOnly
                             presentedAnimeDetailID = nil
+                        }
+
+                        if shouldRestoreTimelineFocus {
+                            Task { @MainActor in
+                                timelinePendingRestoreEntryID = restoreEntryID
+                                await Task.yield()
+                                try? await Task.sleep(for: .milliseconds(250))
+                                timelineFocusRestoreToken += 1
+                            }
                         }
                     }
                 )
@@ -160,9 +184,11 @@ private enum AnimeDetailRoute: Hashable {
 }
 
 private struct AnimeDetailScreen: View {
+    @Environment(\.resetFocus) private var resetFocus
     let bgmId: Int
     let onClose: () -> Void
     @State private var navigationPath: [AnimeDetailRoute] = []
+    @Namespace private var detailFocusScope
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -177,6 +203,8 @@ private struct AnimeDetailScreen: View {
                     }
                 )
             }
+            .focusScope(detailFocusScope)
+            .focusSection()
             .toolbar(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
             .navigationDestination(for: AnimeDetailRoute.self) { route in
@@ -191,6 +219,9 @@ private struct AnimeDetailScreen: View {
                 }
             }
         }
+        .onAppear {
+            resetFocus(in: detailFocusScope)
+        }
         .onExitCommand {
             if navigationPath.isEmpty {
                 onClose()
@@ -204,6 +235,9 @@ private struct AnimeDetailScreen: View {
 private struct SidebarDetailView: View {
     @Binding var selectedCategory: NavigationCategory?
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    let timelineFocusRestoreToken: Int
+    @Binding var timelineLastFocusedEntryID: String?
+    @Binding var timelinePendingRestoreEntryID: String?
     let openAnimeDetail: (Int) -> Void
 
     var body: some View {
@@ -218,6 +252,13 @@ private struct SidebarDetailView: View {
                 HomeView(openAnimeDetail: openAnimeDetail)
             case .animeList:
                 AnimeListPlaceholderView(columnVisibility: $columnVisibility)
+            case .timeline:
+                TimelineView(
+                    focusRestoreToken: timelineFocusRestoreToken,
+                    lastFocusedEntryID: $timelineLastFocusedEntryID,
+                    pendingRestoreEntryID: $timelinePendingRestoreEntryID,
+                    openAnimeDetail: openAnimeDetail
+                )
             case .settings:
                 SettingsPlaceholderView(columnVisibility: $columnVisibility)
             }
