@@ -10,7 +10,31 @@ import Foundation
 /// API 基础配置
 enum APIConfig {
     static let baseURL = URL(string: "https://next.bgm.tv")!
-    static let userAgent = "FeiranYang/AniTV/1.0 (iOS)" // Bangumi 要求带上 User-Agent
+    private static let bangumiDeveloperID = "moyuwang"
+    private static let bangumiAppName = "AniTV"
+    private static let bangumiProjectHomepage = "https://github.com/moyuwangP/AniTV"
+
+    static var userAgent: String {
+        let version =
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "1.0"
+
+        return "\(bangumiDeveloperID)/\(bangumiAppName)/\(version) (\(platformName)) (\(bangumiProjectHomepage))"
+    }
+
+    private static var platformName: String {
+        #if os(iOS)
+        return "iOS"
+        #elseif os(macOS)
+        return "macOS"
+        #elseif os(tvOS)
+        return "tvOS"
+        #elseif os(watchOS)
+        return "watchOS"
+        #else
+        return "Apple"
+        #endif
+    }
 }
 
 /// 网络错误定义
