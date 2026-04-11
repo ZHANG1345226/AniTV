@@ -54,7 +54,14 @@ struct TimelineService: Sendable {
     ) async throws -> TimelineDayMap {
         let calendar = TimelineCalendar.make()
         let window = TimelineWindow(calendar: calendar, now: now, daysBefore: daysBefore, daysAfter: daysAfter)
-        let cacheKey = TimelineCacheKey.make(calendar: calendar, now: now, daysBefore: daysBefore, daysAfter: daysAfter)
+        let bangumiDataVersion = try await AniTVDatabase.storedBangumiDataVersion(in: database) ?? "unknown"
+        let cacheKey = TimelineCacheKey.make(
+            calendar: calendar,
+            now: now,
+            daysBefore: daysBefore,
+            daysAfter: daysAfter,
+            bangumiDataVersion: bangumiDataVersion
+        )
 
         if let cachedMap = try await AniTVDatabase.cachedTimelineMap(
             cacheKey: cacheKey,
@@ -148,9 +155,15 @@ private enum TimelineCalendar {
 }
 
 private enum TimelineCacheKey {
-    static func make(calendar: Calendar, now: Date, daysBefore: Int, daysAfter: Int) -> String {
+    static func make(
+        calendar: Calendar,
+        now: Date,
+        daysBefore: Int,
+        daysAfter: Int,
+        bangumiDataVersion: String
+    ) -> String {
         let dayKey = now.timelineDayKey(calendar: calendar)
-        return "timeline:\(dayKey):\(daysBefore):\(daysAfter)"
+        return "timeline:\(dayKey):\(daysBefore):\(daysAfter):\(bangumiDataVersion)"
     }
 }
 

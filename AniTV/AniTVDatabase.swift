@@ -14,6 +14,13 @@ enum AniTVDatabase {
         URL(string: "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json")!,
         URL(string: "https://unpkg.com/bangumi-data@0.3/dist/data.json")!
     ]
+    private static let bangumiDataVersionSettingKey = "bangumi_data_version"
+    private static let bangumiDataUpdatedAtSettingKey = "bangumi_data_updated_at"
+
+    struct BangumiDataRelease: Sendable {
+        let version: String
+        let url: URL
+    }
 
     static let systemSettingsSchema = """
     CREATE TABLE "system_settings" (
@@ -505,10 +512,15 @@ enum AniTVDatabase {
     }
 
     static func downloadBangumiData() async throws -> [BgmDataItem] {
+        let release = try await resolveBangumiDataRelease()
+        return try await downloadBangumiData(from: release.url)
+    }
+
+    static func resolveBangumiDataRelease() async throws -> BangumiDataRelease {
         let session = URLSession(configuration: {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForRequest = 20
-            configuration.timeoutIntervalForResource = 60
+            configuration.timeoutIntervalForResource = 20
             configuration.waitsForConnectivity = false
             return configuration
         }())
@@ -517,14 +529,23 @@ enum AniTVDatabase {
 
         for url in bangumiDataURLs {
             do {
-                let (data, response) = try await session.data(from: url)
+                var request = URLRequest(url: url)
+                request.httpMethod = "HEAD"
+
+                let (_, response) = try await session.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse,
-                      200..<300 ~= httpResponse.statusCode else {
+                      200..<400 ~= httpResponse.statusCode else {
                     throw BootstrapError.invalidResponse
                 }
 
-                return try JSONDecoder().decode(BgmDataResponse.self, from: data).items
+                if let release = bangumiDataRelease(from: httpResponse, fallbackURL: url) {
+                    print("[AniTVDatabase] Resolved bangumi-data version \(release.version) from \(url.absoluteString)")
+                    print("[AniTVDatabase] Versioned bangumi-data URL: \(release.url.absoluteString)")
+                    return release
+                }
+
+                throw BootstrapError.versionNotFound
             } catch {
                 lastError = error
             }
@@ -533,12 +554,67 @@ enum AniTVDatabase {
         throw BootstrapError.downloadFailed(lastError)
     }
 
-    static func replaceBangumiData(_ items: [BgmDataItem], in database: DatabaseQueue) async throws {
+    static func downloadBangumiData(from url: URL) async throws -> [BgmDataItem] {
+        let session = URLSession(configuration: {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 20
+            configuration.timeoutIntervalForResource = 60
+            configuration.waitsForConnectivity = false
+            return configuration
+        }())
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode else {
+            throw BootstrapError.invalidResponse
+        }
+
+        return try JSONDecoder().decode(BgmDataResponse.self, from: data).items
+    }
+
+    static func storedBangumiDataVersion(in database: any DatabaseWriter) async throws -> String? {
+        try await systemSettingValue(forKey: bangumiDataVersionSettingKey, in: database)
+    }
+
+    static func shouldUpdateBangumiData(
+        to release: BangumiDataRelease,
+        in database: DatabaseQueue
+    ) async throws -> Bool {
+        if try await isBangumiDataEmpty(in: database) {
+            print("[AniTVDatabase] bangumi_data table is empty, update required for version \(release.version)")
+            return true
+        }
+
+        let localVersion = try await storedBangumiDataVersion(in: database)
+        let shouldUpdate = localVersion != release.version
+        print("[AniTVDatabase] Local bangumi-data version: \(localVersion ?? "<none>"), remote version: \(release.version), should update: \(shouldUpdate)")
+        return shouldUpdate
+    }
+
+    static func replaceBangumiData(
+        _ items: [BgmDataItem],
+        version: String,
+        in database: DatabaseQueue
+    ) async throws {
         let encoder = JSONEncoder()
         let updatedAt = String(Int(Date().timeIntervalSince1970))
-        let validItems = items.compactMap { item -> (BgmDataItem, String)? in
+        let allValidItems = items.compactMap { item -> (BgmDataItem, String)? in
             guard let bangumiID = item.bangumiID else { return nil }
             return (item, bangumiID)
+        }
+        var deduplicatedItemsByID: [String: BgmDataItem] = [:]
+        for (item, bangumiID) in allValidItems {
+            deduplicatedItemsByID[bangumiID] = item
+        }
+        let validItems = deduplicatedItemsByID
+            .map { ($0.value, $0.key) }
+            .sorted { $0.1 < $1.1 }
+        let duplicateCount = allValidItems.count - validItems.count
+
+        print("[AniTVDatabase] Importing \(validItems.count) bangumi-data rows for version \(version)")
+        if duplicateCount > 0 {
+            print("[AniTVDatabase] Deduplicated \(duplicateCount) duplicate bangumi-data rows before import")
         }
 
         try await database.write { db in
@@ -588,22 +664,21 @@ enum AniTVDatabase {
                 )
             }
 
-            try db.execute(
-                sql: """
-                INSERT INTO "system_settings" ("key", "value", "value_type", "created_at", "updated_at")
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT("key") DO UPDATE SET
-                  "value" = excluded."value",
-                  "value_type" = excluded."value_type",
-                  "updated_at" = CURRENT_TIMESTAMP
-                """,
-                arguments: [
-                    "bangumi_data_updated_at",
-                    updatedAt,
-                    "timestamp"
-                ]
+            try upsertSystemSetting(
+                key: bangumiDataUpdatedAtSettingKey,
+                value: updatedAt,
+                valueType: "timestamp",
+                in: db
+            )
+            try upsertSystemSetting(
+                key: bangumiDataVersionSettingKey,
+                value: version,
+                valueType: "string",
+                in: db
             )
         }
+
+        print("[AniTVDatabase] Finished importing bangumi-data version \(version)")
     }
 
     private static func databaseURL() throws -> URL {
@@ -665,6 +740,102 @@ enum AniTVDatabase {
         }
     }
 
+    private static func bangumiDataRelease(
+        from response: HTTPURLResponse,
+        fallbackURL: URL
+    ) -> BangumiDataRelease? {
+        if let locationValue = response.value(forHTTPHeaderField: "Location"),
+           let version = extractBangumiDataVersion(from: locationValue),
+           let locationURL = URL(string: locationValue, relativeTo: fallbackURL)?.absoluteURL,
+           let versionedURL = makeVersionedBangumiDataURL(from: locationURL, version: version) {
+            return BangumiDataRelease(version: version, url: versionedURL)
+        }
+
+        if let version = response.value(forHTTPHeaderField: "x-jsd-version"),
+           let versionedURL = makeVersionedBangumiDataURL(from: fallbackURL, version: version) {
+            return BangumiDataRelease(version: version, url: versionedURL)
+        }
+
+        if let responseURL = response.url,
+           let version = extractBangumiDataVersion(from: responseURL.absoluteString),
+           let versionedURL = makeVersionedBangumiDataURL(from: responseURL, version: version) {
+            return BangumiDataRelease(version: version, url: versionedURL)
+        }
+
+        return nil
+    }
+
+    private static func extractBangumiDataVersion(from string: String) -> String? {
+        let pattern = #"bangumi-data@([^/]+)/dist/data\.json"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: string,
+                range: NSRange(string.startIndex..., in: string)
+              ),
+              match.numberOfRanges > 1,
+              let versionRange = Range(match.range(at: 1), in: string) else {
+            return nil
+        }
+        return String(string[versionRange])
+    }
+
+    private static func makeVersionedBangumiDataURL(from url: URL, version: String) -> URL? {
+        let absoluteString = url.absoluteString
+        guard let range = absoluteString.range(
+            of: #"bangumi-data@[^/]+/dist/data\.json"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+
+        let replaced = absoluteString.replacingCharacters(
+            in: range,
+            with: "bangumi-data@\(version)/dist/data.json"
+        )
+        return URL(string: replaced)
+    }
+
+    private static func systemSettingValue(
+        forKey key: String,
+        in database: any DatabaseWriter
+    ) async throws -> String? {
+        try await database.read { db in
+            try #sql(
+                """
+                SELECT "value"
+                FROM "system_settings"
+                WHERE "key" = \(bind: key)
+                LIMIT 1
+                """,
+                as: String.self
+            )
+            .fetchOne(db)
+        }
+    }
+
+    private static func upsertSystemSetting(
+        key: String,
+        value: String,
+        valueType: String,
+        in db: Database
+    ) throws {
+        try db.execute(
+            sql: """
+            INSERT INTO "system_settings" ("key", "value", "value_type", "created_at", "updated_at")
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT("key") DO UPDATE SET
+              "value" = excluded."value",
+              "value_type" = excluded."value_type",
+              "updated_at" = CURRENT_TIMESTAMP
+            """,
+            arguments: [
+                key,
+                value,
+                valueType
+            ]
+        )
+    }
+
     private static func formatCodingPath(_ codingPath: [CodingKey]) -> String {
         guard !codingPath.isEmpty else { return "<root>" }
         return codingPath
@@ -679,6 +850,7 @@ enum AniTVDatabase {
 
     enum BootstrapError: LocalizedError {
         case invalidResponse
+        case versionNotFound
         case encodingFailed
         case downloadFailed(Error?)
 
@@ -686,6 +858,8 @@ enum AniTVDatabase {
             switch self {
             case .invalidResponse:
                 return "Bangumi 数据下载失败，请稍后重试。"
+            case .versionNotFound:
+                return "未能解析 Bangumi 数据版本信息。"
             case .encodingFailed:
                 return "Bangumi 数据编码失败。"
             case .downloadFailed(let error):

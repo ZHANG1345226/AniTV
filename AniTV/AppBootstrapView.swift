@@ -56,17 +56,25 @@ final class AppBootstrapModel: ObservableObject {
 
     private func bootstrap() async {
         do {
-            if try await AniTVDatabase.isBangumiDataEmpty(in: database) {
+            let release = try await AniTVDatabase.resolveBangumiDataRelease()
+            print("[AppBootstrap] Latest bangumi-data version: \(release.version)")
+
+            if try await AniTVDatabase.shouldUpdateBangumiData(to: release, in: database) {
+                print("[AppBootstrap] Starting bangumi-data download from \(release.url.absoluteString)")
                 phase = .downloading
-                let items = try await AniTVDatabase.downloadBangumiData()
+                let items = try await AniTVDatabase.downloadBangumiData(from: release.url)
 
                 phase = .importing
-                try await AniTVDatabase.replaceBangumiData(items, in: database)
+                try await AniTVDatabase.replaceBangumiData(items, version: release.version, in: database)
+            } else {
+                print("[AppBootstrap] bangumi-data is already up to date, skipping import")
             }
 
+            print("[AppBootstrap] Bootstrap finished")
             phase = .ready
         } catch {
             AniTVDatabase.logBootstrapError(error)
+            print("[AppBootstrap] Bootstrap failed: \(error.localizedDescription)")
             phase = .failed(error.localizedDescription)
         }
     }
