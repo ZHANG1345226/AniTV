@@ -12,6 +12,7 @@ import SQLiteData
 @main
 struct AniTVApp: App {
     let appDatabase: DatabaseQueue
+    @StateObject private var bangumiOAuthManager = BangumiOAuthManager()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -43,6 +44,7 @@ struct AniTVApp: App {
 
         WindowGroup {
             AppBootstrapView(database: appDatabase)
+                .environmentObject(bangumiOAuthManager)
         }
         .modelContainer(sharedModelContainer)
     }

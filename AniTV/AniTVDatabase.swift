@@ -10,6 +10,11 @@ import GRDB
 import SQLiteData
 
 enum AniTVDatabase {
+    private enum StorageError: Error {
+        case insertedProfileMissing
+        case updatedProfileMissing
+    }
+
     private static let bangumiDataURLs = [
         URL(string: "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json")!,
         URL(string: "https://unpkg.com/bangumi-data@0.3/dist/data.json")!
@@ -76,6 +81,36 @@ enum AniTVDatabase {
       "sort" REAL NOT NULL DEFAULT 0,
       "expires_at" INTEGER,
       "cached_at" INTEGER NOT NULL
+    ) STRICT
+    """
+
+    static let userProfilesSchema = """
+    CREATE TABLE "user_profiles" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "bgm_user_id" INTEGER,
+      "username" TEXT,
+      "nickname" TEXT,
+      "avatar" TEXT,
+      "access_token" TEXT,
+      "refresh_token" TEXT,
+      "token_type" TEXT,
+      "last_used_at" TEXT NOT NULL,
+      "expires_at" TEXT NOT NULL,
+      "created_at" TEXT NOT NULL,
+      "updated_at" TEXT NOT NULL
+    ) STRICT
+    """
+
+    static let localEpisodeWatchStateSchema = """
+    CREATE TABLE "local_episode_watch_state" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "bgm_user_id" INTEGER NOT NULL,
+      "episode_id" INTEGER NOT NULL,
+      "type" INTEGER NOT NULL DEFAULT 0,
+      "updated_at" INTEGER NOT NULL DEFAULT 0,
+      "playhead_seconds" INTEGER NOT NULL DEFAULT 0,
+      "created_at" TEXT NOT NULL,
+      "local_updated_at" TEXT NOT NULL
     ) STRICT
     """
 
@@ -191,8 +226,312 @@ enum AniTVDatabase {
             )
             .execute(db)
         }
+        migrator.registerMigration("Create user_profiles table") { db in
+            try #sql(
+                """
+                CREATE TABLE "user_profiles" (
+                  "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+                  "bgm_user_id" INTEGER,
+                  "username" TEXT,
+                  "nickname" TEXT,
+                  "avatar" TEXT,
+                  "access_token" TEXT,
+                  "refresh_token" TEXT,
+                  "token_type" TEXT,
+                  "last_used_at" TEXT NOT NULL,
+                  "expires_at" TEXT NOT NULL,
+                  "created_at" TEXT NOT NULL,
+                  "updated_at" TEXT NOT NULL
+                ) STRICT
+                """
+            )
+            .execute(db)
+        }
+        migrator.registerMigration("Create user_profiles indexes") { db in
+            try #sql(
+                """
+                CREATE INDEX IF NOT EXISTS "user_profiles_last_used_at"
+                ON "user_profiles" ("last_used_at" DESC)
+                """
+            )
+            .execute(db)
+            try #sql(
+                """
+                CREATE INDEX IF NOT EXISTS "user_profiles_bgm_user_id"
+                ON "user_profiles" ("bgm_user_id")
+                """
+            )
+            .execute(db)
+        }
+        migrator.registerMigration("Create local_episode_watch_state table") { db in
+            try #sql(
+                """
+                CREATE TABLE "local_episode_watch_state" (
+                  "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+                  "bgm_user_id" INTEGER NOT NULL,
+                  "episode_id" INTEGER NOT NULL,
+                  "type" INTEGER NOT NULL DEFAULT 0,
+                  "updated_at" INTEGER NOT NULL DEFAULT 0,
+                  "playhead_seconds" INTEGER NOT NULL DEFAULT 0,
+                  "created_at" TEXT NOT NULL,
+                  "local_updated_at" TEXT NOT NULL
+                ) STRICT
+                """
+            )
+            .execute(db)
+        }
+        migrator.registerMigration("Create local_episode_watch_state unique index") { db in
+            try #sql(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS "local_episode_watch_state_identity"
+                ON "local_episode_watch_state" ("bgm_user_id", "episode_id")
+                """
+            )
+            .execute(db)
+        }
         try migrator.migrate(database)
         return database
+    }
+
+    static func currentUserProfile(in database: any DatabaseWriter) async throws -> UserProfile? {
+        try await database.read { db in
+            try #sql(
+                """
+                SELECT *
+                FROM "user_profiles"
+                ORDER BY "last_used_at" DESC
+                LIMIT 1
+                """,
+                as: UserProfile.self
+            )
+            .fetchOne(db)
+        }
+    }
+
+    static func insertGuestUserProfile(in database: any DatabaseWriter) async throws -> UserProfile {
+        let now = Date()
+        let guestExpiry = Date(timeIntervalSince1970: 0)
+        return try await database.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO "user_profiles" (
+                  "bgm_user_id",
+                  "username",
+                  "nickname",
+                  "avatar",
+                  "access_token",
+                  "refresh_token",
+                  "token_type",
+                  "last_used_at",
+                  "expires_at",
+                  "created_at",
+                  "updated_at"
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    nil as Int?,
+                    nil as String?,
+                    nil as String?,
+                    nil as String?,
+                    nil as String?,
+                    nil as String?,
+                    nil as String?,
+                    now,
+                    guestExpiry,
+                    now,
+                    now
+                ]
+            )
+
+            guard let profile = try #sql(
+                """
+                SELECT *
+                FROM "user_profiles"
+                WHERE "id" = last_insert_rowid()
+                """,
+                as: UserProfile.self
+            )
+            .fetchOne(db) else {
+                throw StorageError.insertedProfileMissing
+            }
+
+            return profile
+        }
+    }
+
+    static func upsertCurrentUserProfile(
+        bgmUserID: Int,
+        username: String,
+        nickname: String,
+        avatar: String?,
+        accessToken: String,
+        refreshToken: String?,
+        tokenType: String?,
+        expiresAt: Date,
+        in database: any DatabaseWriter
+    ) async throws -> UserProfile {
+        let now = Date()
+        return try await database.write { db in
+            if let current = try #sql(
+                """
+                SELECT *
+                FROM "user_profiles"
+                ORDER BY "last_used_at" DESC
+                LIMIT 1
+                """,
+                as: UserProfile.self
+            )
+            .fetchOne(db) {
+                try db.execute(
+                    sql: """
+                    UPDATE "user_profiles"
+                    SET
+                      "bgm_user_id" = ?,
+                      "username" = ?,
+                      "nickname" = ?,
+                      "avatar" = ?,
+                      "access_token" = ?,
+                      "refresh_token" = ?,
+                      "token_type" = ?,
+                      "last_used_at" = ?,
+                      "expires_at" = ?,
+                      "updated_at" = ?
+                    WHERE "id" = ?
+                    """,
+                    arguments: [
+                        bgmUserID,
+                        username,
+                        nickname,
+                        avatar,
+                        accessToken,
+                        refreshToken,
+                        tokenType,
+                        now,
+                        expiresAt,
+                        now,
+                        current.id
+                    ]
+                )
+
+                guard let updated = try #sql(
+                    """
+                    SELECT *
+                    FROM "user_profiles"
+                    WHERE "id" = \(bind: current.id)
+                    """,
+                    as: UserProfile.self
+                )
+                .fetchOne(db) else {
+                    throw StorageError.updatedProfileMissing
+                }
+
+                return updated
+            }
+
+            try db.execute(
+                sql: """
+                INSERT INTO "user_profiles" (
+                  "bgm_user_id",
+                  "username",
+                  "nickname",
+                  "avatar",
+                  "access_token",
+                  "refresh_token",
+                  "token_type",
+                  "last_used_at",
+                  "expires_at",
+                  "created_at",
+                  "updated_at"
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    bgmUserID,
+                    username,
+                    nickname,
+                    avatar,
+                    accessToken,
+                    refreshToken,
+                    tokenType,
+                    now,
+                    expiresAt,
+                    now,
+                    now
+                ]
+            )
+
+            guard let inserted = try #sql(
+                """
+                SELECT *
+                FROM "user_profiles"
+                WHERE "id" = last_insert_rowid()
+                """,
+                as: UserProfile.self
+            )
+            .fetchOne(db) else {
+                throw StorageError.insertedProfileMissing
+            }
+
+            return inserted
+        }
+    }
+
+    static func upsertLocalEpisodeWatchState(
+        bgmUserID: Int,
+        episodeID: Int,
+        type: Int,
+        updatedAt: Int,
+        playheadSeconds: Int,
+        in database: any DatabaseWriter
+    ) async throws {
+        let now = Date()
+        try await database.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO "local_episode_watch_state" (
+                  "bgm_user_id",
+                  "episode_id",
+                  "type",
+                  "updated_at",
+                  "playhead_seconds",
+                  "created_at",
+                  "local_updated_at"
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT("bgm_user_id", "episode_id") DO UPDATE SET
+                  "type" = excluded."type",
+                  "updated_at" = excluded."updated_at",
+                  "playhead_seconds" = excluded."playhead_seconds",
+                  "local_updated_at" = excluded."local_updated_at"
+                """,
+                arguments: [
+                    bgmUserID,
+                    episodeID,
+                    type,
+                    updatedAt,
+                    playheadSeconds,
+                    now,
+                    now
+                ]
+            )
+        }
+    }
+
+    static func localEpisodeWatchState(
+        bgmUserID: Int,
+        episodeID: Int,
+        in database: any DatabaseWriter
+    ) async throws -> LocalEpisodeWatchState? {
+        try await database.read { db in
+            try #sql(
+                """
+                SELECT *
+                FROM "local_episode_watch_state"
+                WHERE "bgm_user_id" = \(bind: bgmUserID)
+                  AND "episode_id" = \(bind: episodeID)
+                """,
+                as: LocalEpisodeWatchState.self
+            )
+            .fetchOne(db)
+        }
     }
 
     static func cachedTMDBBackdropURL(

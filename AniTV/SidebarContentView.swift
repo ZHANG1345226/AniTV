@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreImage.CIFilterBuiltins
 
 enum NavigationCategory: String, Hashable {
     case search
@@ -373,30 +374,13 @@ private struct AnimeListPlaceholderView: View {
 
 private struct SettingsPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
-    @Environment(\.openURL) private var openURL
-    @State private var loginNotice: String?
+    @EnvironmentObject private var bangumiOAuthManager: BangumiOAuthManager
 
     private enum BangumiOAuthConfig {
-        static let clientID: String? = nil
-        static let redirectURI: String? = nil
-        static let responseType = "code"
-    }
-
-    private var authorizationURL: URL? {
-        guard let clientID = BangumiOAuthConfig.clientID,
-              !clientID.isEmpty,
-              let redirectURI = BangumiOAuthConfig.redirectURI,
-              !redirectURI.isEmpty else {
-            return nil
-        }
-
-        var components = URLComponents(url: BangumiAPI.web.build("oauth/authorize"), resolvingAgainstBaseURL: true)
-        components?.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "response_type", value: BangumiOAuthConfig.responseType),
-            URLQueryItem(name: "redirect_uri", value: redirectURI)
-        ]
-        return components?.url
+        static let clientID = BangumiOAuthManager.sharedClientID
+        static let appCallbackURL = BangumiOAuthManager.defaultRedirectURI
+        static let secret = BangumiOAuthManager.sharedClientSecret
+        static let relayEndpoint = "/oauth/bangumi"
     }
 
     var body: some View {
@@ -408,41 +392,9 @@ private struct SettingsPlaceholderView: View {
                     description: Text("这里可以放播放偏好、账号与数据源设置。")
                 )
 
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Bangumi 账号")
-                        .font(.title2.weight(.semibold))
-
-                    Text("登录后可以继续接入收藏与观看进度同步。")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 16) {
-                        Button {
-                            startBangumiLogin()
-                        } label: {
-                            Label("登录 Bangumi", systemImage: "person.badge.key")
-                                .frame(minWidth: 280)
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("打开侧边栏") {
-                            columnVisibility = .all
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    if let loginNotice {
-                        Label(loginNotice, systemImage: "info.circle")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(28)
-                .frame(maxWidth: 760, alignment: .leading)
-                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                HStack(alignment: .top, spacing: 24) {
+                    appleDeviceLoginCard
+                    lanQRCodeLoginCard
                 }
             }
             .padding(.horizontal, 48)
@@ -452,14 +404,178 @@ private struct SettingsPlaceholderView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func startBangumiLogin() {
-        guard let authorizationURL else {
-            loginNotice = "还没配置 Bangumi OAuth 的 client_id 和 redirect_uri，先把它们填进设置页代码后再试。"
-            return
-        }
+    private var appleDeviceLoginCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("通过 Apple 设备登录")
+                .font(.title2.weight(.semibold))
 
-        loginNotice = "已尝试打开 Bangumi 授权页。完成 OAuth 回调后，再接入 token 交换即可。"
-        openURL(authorizationURL)
+            Text("tvOS 会通过系统认证会话打开 Bangumi OAuth 页面，Bangumi 授权完成后直接回调到 `anitv://oauth/bangumi`。")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                SettingsValueRow(title: "Client ID", value: BangumiOAuthConfig.clientID)
+                SettingsValueRow(title: "Bangumi Redirect URI", value: BangumiOAuthConfig.appCallbackURL)
+                SettingsValueRow(title: "Callback Scheme", value: BangumiOAuthManager.callbackScheme)
+            }
+
+            Button {
+                startBangumiLogin()
+            } label: {
+                Label("通过 Apple 设备登录", systemImage: "person.badge.key")
+                    .frame(minWidth: 320)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(bangumiOAuthManager.isAuthenticating)
+
+            Label(bangumiOAuthManager.statusMessage, systemImage: "info.circle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if !bangumiOAuthManager.accessToken.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Access Token")
+                        .font(.headline)
+
+                    Text(bangumiOAuthManager.accessToken)
+                        .font(.footnote.monospaced())
+                        .lineLimit(4)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+
+            if !bangumiOAuthManager.rawResponse.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Token Response")
+                        .font(.headline)
+
+                    Text(bangumiOAuthManager.rawResponse)
+                        .font(.footnote.monospaced())
+                        .lineLimit(6)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var lanQRCodeLoginCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("局域网二维码登录")
+                .font(.title2.weight(.semibold))
+
+            Text("二维码入口会使用电视当前局域网 IP，并且 Bangumi 授权完成后会直接回调到电视本地 HTTP 服务。")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 24) {
+                LANLoginQRCodeView(urlString: bangumiOAuthManager.lanEntryURL)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingsValueRow(title: "共享 App ID", value: BangumiOAuthConfig.clientID)
+                    SettingsValueRow(title: "Bangumi Redirect URI", value: bangumiOAuthManager.lanRedirectURI)
+                    SettingsValueRow(title: "扫码入口", value: bangumiOAuthManager.lanEntryURL)
+                    SettingsValueRow(title: "授权回调接口", value: BangumiOAuthConfig.relayEndpoint)
+                }
+            }
+
+            Label(bangumiOAuthManager.lanServiceStatus, systemImage: "dot.radiowaves.left.and.right")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Label("AniTV 现在会启动本地 HTTP 服务。手机扫码后会访问 `/oauth/bangumi/start`，Bangumi 授权完成后会直接回调到电视的 `/oauth/bangumi`。", systemImage: "qrcode")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private func startBangumiLogin() {
+        bangumiOAuthManager.startLogin(
+            clientID: BangumiOAuthConfig.clientID,
+            clientSecret: BangumiOAuthConfig.secret,
+            redirectURI: BangumiOAuthConfig.appCallbackURL
+        )
+    }
+}
+
+private struct LANLoginQRCodeView: View {
+    let urlString: String
+
+    private let context = CIContext()
+    private let filter = CIFilter.qrCodeGenerator()
+
+    var body: some View {
+        Group {
+            if !urlString.isEmpty, let image = makeQRCodeImage(from: urlString) {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
+                    .padding(16)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.white.opacity(0.12))
+                    .frame(width: 220, height: 220)
+                    .overlay {
+                        Text("等待局域网地址")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+    }
+
+    private func makeQRCodeImage(from string: String) -> UIImage? {
+        let data = Data(string.utf8)
+        filter.setValue(data, forKey: "inputMessage")
+        filter.correctionLevel = "M"
+
+        guard let outputImage = filter.outputImage else { return nil }
+        let transform = CGAffineTransform(scaleX: 12, y: 12)
+        let scaledImage = outputImage.transformed(by: transform)
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
+}
+
+private struct SettingsValueRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.headline)
+
+            Text(value.isEmpty ? "未配置" : value)
+                .font(.footnote.monospaced())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
     }
 }
 
