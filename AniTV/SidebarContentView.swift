@@ -373,14 +373,93 @@ private struct AnimeListPlaceholderView: View {
 
 private struct SettingsPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    @Environment(\.openURL) private var openURL
+    @State private var loginNotice: String?
+
+    private enum BangumiOAuthConfig {
+        static let clientID: String? = nil
+        static let redirectURI: String? = nil
+        static let responseType = "code"
+    }
+
+    private var authorizationURL: URL? {
+        guard let clientID = BangumiOAuthConfig.clientID,
+              !clientID.isEmpty,
+              let redirectURI = BangumiOAuthConfig.redirectURI,
+              !redirectURI.isEmpty else {
+            return nil
+        }
+
+        var components = URLComponents(url: BangumiAPI.web.build("oauth/authorize"), resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "client_id", value: clientID),
+            URLQueryItem(name: "response_type", value: BangumiOAuthConfig.responseType),
+            URLQueryItem(name: "redirect_uri", value: redirectURI)
+        ]
+        return components?.url
+    }
 
     var body: some View {
-        SidebarPlaceholderView(
-            title: "设置",
-            systemImage: "gear",
-            description: "这里可以放播放偏好、账号与数据源设置。",
-            columnVisibility: $columnVisibility
-        )
+        ScrollView {
+            VStack(alignment: .leading, spacing: 32) {
+                ContentUnavailableView(
+                    "设置",
+                    systemImage: "gear",
+                    description: Text("这里可以放播放偏好、账号与数据源设置。")
+                )
+
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Bangumi 账号")
+                        .font(.title2.weight(.semibold))
+
+                    Text("登录后可以继续接入收藏与观看进度同步。")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 16) {
+                        Button {
+                            startBangumiLogin()
+                        } label: {
+                            Label("登录 Bangumi", systemImage: "person.badge.key")
+                                .frame(minWidth: 280)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("打开侧边栏") {
+                            columnVisibility = .all
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    if let loginNotice {
+                        Label(loginNotice, systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(28)
+                .frame(maxWidth: 760, alignment: .leading)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                }
+            }
+            .padding(.horizontal, 48)
+            .padding(.vertical, 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func startBangumiLogin() {
+        guard let authorizationURL else {
+            loginNotice = "还没配置 Bangumi OAuth 的 client_id 和 redirect_uri，先把它们填进设置页代码后再试。"
+            return
+        }
+
+        loginNotice = "已尝试打开 Bangumi 授权页。完成 OAuth 回调后，再接入 token 交换即可。"
+        openURL(authorizationURL)
     }
 }
 
