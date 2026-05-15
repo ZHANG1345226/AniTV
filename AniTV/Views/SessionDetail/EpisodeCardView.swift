@@ -13,7 +13,9 @@ struct EpisodeCardView: View {
     let episodeInfo: BgmEpisodeInfo
     let sessionTitle: String
     let stillURL: URL? // 单集截图
+    let isWatched: Bool
     let onOpenPlayer: () -> Void
+    let onToggleWatched: () -> Void
     
     var body: some View {
         Button(action: onOpenPlayer) {
@@ -35,7 +37,7 @@ struct EpisodeCardView: View {
                 
                 // 2. 剧集标题/集数
                 VStack(alignment: .leading) {
-                    Text("第 \(Int(episodeInfo.ep)) 话")
+                    Text("\(isWatched ? "✓ " : "")第 \(Int(episodeInfo.ep)) 话")
                         .font(.caption2)
                         .fontWeight(.bold)
                         .opacity(0.8)
@@ -52,6 +54,10 @@ struct EpisodeCardView: View {
         }
         .buttonStyle(.card) // tvOS 自带的卡片样式，自带视差和光效
         .frame(width: 320)
+        .padding(.top, 10)
+        .contextMenu {
+            Button(isWatched ? "撤销观看状态" : "标记为已观看", action: onToggleWatched)
+        }
         // 注意：使用了 .card 样式后，不需要手动写 scaleEffect，系统会自动处理
     }
 }

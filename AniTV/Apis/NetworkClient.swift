@@ -56,60 +56,227 @@ enum NetworkError: Error, LocalizedError {
 
 /// 核心网络请求客户端 (Actor 保证线程安全，或者无状态 Struct)
 struct NetworkClient: Sendable {
-    
-    // 单例模式（可选，如果不需要存储状态，直接用 static func 也可以）
     static let shared = NetworkClient()
-    
+
     private init() {}
 
-    /// 通用的 GET 请求方法
-    /// - Parameters:
-    ///   - path: API 路径，例如 "/p1/trending/subjects"
-    ///   - queryItems: 查询参数，例如 [URLQueryItem(name: "type", value: "2")]
-    ///   - decodingType: 返回的数据类型（必须遵守 Codable）
-    func request<T: Decodable & Sendable>(
+    func request<T: Decodable>(
         url: URL,
         queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
+        try await request(T.self, method: "GET", url: url, queryItems: queryItems)
+    }
+
+    func request<T: Decodable>(
+        _ type: T.Type,
+        method: String,
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> T {
+        let data = try await requestData(
+            method: method,
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+        return try decode(type, from: data, url: url)
+    }
+
+    func get(
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        try await requestData(
+            method: "GET",
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func post(
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        try await requestData(
+            method: "POST",
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func put(
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        try await requestData(
+            method: "PUT",
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func patch(
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        try await requestData(
+            method: "PATCH",
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func delete(
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        try await requestData(
+            method: "DELETE",
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func requestVoid(
+        method: String,
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws {
+        _ = try await requestData(
+            method: method,
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    func requestData(
+        method: String,
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> Data {
+        let response = try await send(
+            method: method,
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+        return response.data
+    }
+
+    func requestResponse(
+        method: String,
+        url: URL,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        acceptableStatusCodes: Set<Int> = successStatusCodes
+    ) async throws -> HTTPResponse {
+        try await send(
+            method: method,
+            url: url,
+            queryItems: queryItems,
+            headers: headers,
+            body: body,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
+    private func send(
+        method: String,
+        url: URL,
+        queryItems: [URLQueryItem]?,
+        headers: [String: String],
+        body: Data?,
+        acceptableStatusCodes: Set<Int>
+    ) async throws -> HTTPResponse {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
             throw NetworkError.invalidURL
         }
-        
-        // 2. 如果有参数，设置给 components
-        // 注意：如果有默认参数，应该在这里合并，而不是覆盖
-        if let queryItems = queryItems {
+
+        if let queryItems {
             components.queryItems = queryItems
         }
-        
-        // 3. 关键点：从 components 中获取最终的 URL
+
         guard let finalURL = components.url else {
             throw NetworkError.invalidURL
         }
-        print(finalURL)
-        
-        // 2. 配置 Request
+
         var request = URLRequest(url: finalURL)
-        request.httpMethod = "GET"
+        request.httpMethod = method
+        request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
-        
-        // 3. 发送请求
-        let (data, response) = try await URLSession.shared.data(for: request)
-        print(data, response)
-        
-        // 4. 验证状态码
-        if let httpResponse = response as? HTTPURLResponse {
-            guard (200...299).contains(httpResponse.statusCode) else {
-                throw NetworkError.badServerResponse(statusCode: httpResponse.statusCode)
-            }
+        headers.forEach { key, value in
+            request.setValue(value, forHTTPHeaderField: key)
         }
-        
-        // 5. 解码
+
+        logRequest(request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            logResponse(statusCode: nil, data: data, url: finalURL)
+            throw NetworkError.unknown(URLError(.badServerResponse))
+        }
+
+        logResponse(statusCode: httpResponse.statusCode, data: data, url: finalURL)
+
+        guard acceptableStatusCodes.contains(httpResponse.statusCode) else {
+            throw NetworkError.badServerResponse(statusCode: httpResponse.statusCode)
+        }
+
+        return HTTPResponse(data: data, response: httpResponse)
+    }
+
+    private func decode<T: Decodable>(
+        _ type: T.Type,
+        from data: Data,
+        url: URL
+    ) throws -> T {
         let decoder = JSONDecoder()
-        // 注意：根据你提供的 JSON，key 是 "nameCN" 而不是 "name_cn"，
-        // 所以这里不需要 .convertFromSnakeCase。
-        // 如果其他接口有区别，可以把 decoder 作为参数传入。
-        
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -117,4 +284,34 @@ struct NetworkClient: Sendable {
             throw NetworkError.decodingError(error)
         }
     }
+
+    private func logRequest(_ request: URLRequest) {
+        let method = request.httpMethod ?? "GET"
+        let url = request.url?.absoluteString ?? "<invalid-url>"
+        print("[NetworkClient] \(method) \(url)")
+
+        if let body = request.httpBody, !body.isEmpty {
+            let preview = String(data: body, encoding: .utf8) ?? "<\(body.count) bytes>"
+            print("[NetworkClient] Request Body: \(preview)")
+        }
+    }
+
+    private func logResponse(statusCode: Int?, data: Data, url: URL) {
+        let statusText = statusCode.map(String.init) ?? "n/a"
+        print("[NetworkClient] Response \(statusText) \(url.absoluteString)")
+
+        guard !data.isEmpty else { return }
+
+        let preview = String(data: data.prefix(2048), encoding: .utf8) ?? "<\(data.count) bytes>"
+        print("[NetworkClient] Response Body: \(preview)")
+    }
+}
+
+extension NetworkClient {
+    struct HTTPResponse: Sendable {
+        let data: Data
+        let response: HTTPURLResponse
+    }
+
+    static let successStatusCodes = Set(200...299)
 }

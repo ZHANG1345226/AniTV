@@ -8,6 +8,7 @@
 
 import SwiftUI
 import AVKit
+import SQLiteData
 
 private let sourceFetchConcurrency = 1
 
@@ -20,6 +21,11 @@ private struct QueuedVideoResource {
 private struct QueuedVideoResourceKey: Hashable {
     let sourceIndex: Int
     let resourceIndex: Int
+}
+
+private struct PlaybackProgressSnapshot {
+    let playheadSeconds: Int
+    let isCompleted: Bool
 }
 
 private struct SourcePanelOverlayContainer: UIViewControllerRepresentable {
@@ -128,6 +134,7 @@ private final class SourcePanelOverlayViewController: UIViewController {
 }
 
 struct AnimePlayerContainerView: View {
+    @Dependency(\.defaultDatabase) private var database
     @State private var player = AVPlayer()
     @State private var videoSources: [VideoSource] = []
     @State private var isLoading = true
@@ -144,14 +151,34 @@ struct AnimePlayerContainerView: View {
     @State private var lastPlaybackPosition: CMTime?
     @State private var mediaResolver = TVOSMediaResolver.shared
     @StateObject private var sourcePanelModel = SourceSwitchPanelModel()
+    @State private var currentBgmUserID: Int?
+    @State private var periodicTimeObserver: Any?
+    @State private var timeControlStatusObservation: NSKeyValueObservation?
+    @State private var lastSavedPlayheadSeconds: Int?
+    @State private var playbackCompletionThreshold = AniTVDatabase.defaultPlaybackCompletionThreshold
+    @State private var didFinishPlayback = false
+    @State private var didSyncCompletionToBangumi = false
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
     
     let episodeInfo: BgmEpisodeInfo
     let sessionTitle: String
+    let initialPlaybackPositionSeconds: Int?
     var onPlaybackCompleted: (() -> Void)? = nil
     @State private var text = "正在解析番剧源..."
+
+    init(
+        episodeInfo: BgmEpisodeInfo,
+        sessionTitle: String,
+        initialPlaybackPositionSeconds: Int? = nil,
+        onPlaybackCompleted: (() -> Void)? = nil
+    ) {
+        self.episodeInfo = episodeInfo
+        self.sessionTitle = sessionTitle
+        self.initialPlaybackPositionSeconds = initialPlaybackPositionSeconds
+        self.onPlaybackCompleted = onPlaybackCompleted
+    }
 
     var body: some View {
         ZStack {
@@ -202,6 +229,8 @@ struct AnimePlayerContainerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
             guard let finishedItem = notification.object as? AVPlayerItem,
                   finishedItem === player.currentItem else { return }
+            didFinishPlayback = true
+            finalizePlaybackProgress(trigger: "completed", shouldSyncCompletionToBangumi: true)
             onPlaybackCompleted?()
         }
         .onAppear {
@@ -211,10 +240,25 @@ struct AnimePlayerContainerView: View {
             queuedVideoResourceKeys = []
             attemptedAutoResourceKeys = []
             isAttemptingPlayback = false
+            didFinishPlayback = false
+            didSyncCompletionToBangumi = false
+            if let initialPlaybackPositionSeconds, initialPlaybackPositionSeconds > 0 {
+                lastPlaybackPosition = CMTime(
+                    seconds: Double(initialPlaybackPositionSeconds),
+                    preferredTimescale: 600
+                )
+            } else {
+                lastPlaybackPosition = nil
+            }
+            lastSavedPlayheadSeconds = initialPlaybackPositionSeconds
+            configurePlaybackProgressTracking()
             sourcePanelModel.update(
                 sources: videoSources,
                 onSourceSelected: handleUserSelectedResource
             )
+            Task {
+                await loadPlaybackPersistenceContext()
+            }
             fetchSourcesTask?.cancel()
             fetchSourcesTask = Task { @MainActor in
                 await doFetch()
@@ -222,6 +266,7 @@ struct AnimePlayerContainerView: View {
         }
         .onDisappear {
             // 退出时清理资源和监听器
+            finalizePlaybackProgress(trigger: "exit", shouldSyncCompletionToBangumi: true)
             fetchSourcesTask?.cancel()
             fetchSourcesTask = nil
             playbackTask?.cancel()
@@ -234,6 +279,7 @@ struct AnimePlayerContainerView: View {
             player.replaceCurrentItem(with: nil)
             statusObservation?.invalidate()
             statusObservation = nil
+            removePlaybackProgressTracking()
         }
     }
 
@@ -377,7 +423,31 @@ struct AnimePlayerContainerView: View {
 
     private func doFetch() async -> URL?{
         guard !Task.isCancelled else { return nil }
-        let configs = getConfig()
+        let configs: [MediaSourceConfig]
+        do {
+            configs = try await AniTVDatabase.fetchMediaSourceConfigs(in: database)
+        } catch {
+            print("[AnimePlayer] Failed to load media sources from database: \(error)")
+            videoSources = []
+            sourcePanelModel.update(
+                sources: videoSources,
+                onSourceSelected: handleUserSelectedResource
+            )
+            sourcePanelModel.setLoadingSources(Set<Int>())
+            return nil
+        }
+
+        guard !configs.isEmpty else {
+            print("[AnimePlayer] No media sources available in database")
+            videoSources = []
+            sourcePanelModel.update(
+                sources: videoSources,
+                onSourceSelected: handleUserSelectedResource
+            )
+            sourcePanelModel.setLoadingSources(Set<Int>())
+            return nil
+        }
+
         let indexedConfigs = Array(configs.enumerated())
 
         videoSources = configs.enumerated().map { index, config in
@@ -463,11 +533,12 @@ struct AnimePlayerContainerView: View {
     
     private func createMetadata() -> [AVMetadataItem] {
         var metadata: [AVMetadataItem] = []
+        let episodeTitle = resolvedEpisodeTitle()
         
         // 1. 设置主标题 (例如："葬送的芙莉莲")
         let titleItem = AVMutableMetadataItem()
         titleItem.identifier = .commonIdentifierTitle
-        titleItem.value = episodeInfo.nameCN as NSString // 使用你传入的 title
+        titleItem.value = episodeTitle as NSString // 使用你传入的 title
         titleItem.extendedLanguageTag = "und" // "und" 表示 undefined，通用语言标签
         metadata.append(titleItem)
         
@@ -493,6 +564,165 @@ struct AnimePlayerContainerView: View {
         metadata.append(genreItem)
         
         return metadata
+    }
+
+    private func resolvedEpisodeTitle() -> String {
+        let chineseTitle = episodeInfo.nameCN.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chineseTitle.isEmpty {
+            return chineseTitle
+        }
+
+        let originalTitle = episodeInfo.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !originalTitle.isEmpty {
+            return originalTitle
+        }
+
+        return "第 \(Int(episodeInfo.ep)) 集"
+    }
+
+    @MainActor
+    private func loadPlaybackPersistenceContext() async {
+        do {
+            let profile = try await AniTVDatabase.currentUserProfile(in: database)
+            currentBgmUserID = profile?.effectiveBgmUserID
+            playbackCompletionThreshold = try await AniTVDatabase.playbackCompletionThreshold(in: database)
+        } catch {
+            currentBgmUserID = nil
+            playbackCompletionThreshold = AniTVDatabase.defaultPlaybackCompletionThreshold
+            print("Failed to load playback persistence context: \(error)")
+        }
+    }
+
+    private func configurePlaybackProgressTracking() {
+        removePlaybackProgressTracking()
+
+        periodicTimeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 10, preferredTimescale: 600),
+            queue: .main
+        ) { [weak player] _ in
+            guard player != nil else { return }
+            persistPlaybackProgress(trigger: "periodic")
+        }
+
+        timeControlStatusObservation = player.observe(
+            \.timeControlStatus,
+            options: [.old, .new]
+        ) { _, change in
+            guard change.oldValue == .playing, change.newValue == .paused else { return }
+            DispatchQueue.main.async {
+                persistPlaybackProgress(trigger: "pause")
+            }
+        }
+    }
+
+    private func removePlaybackProgressTracking() {
+        if let periodicTimeObserver {
+            player.removeTimeObserver(periodicTimeObserver)
+            self.periodicTimeObserver = nil
+        }
+        timeControlStatusObservation?.invalidate()
+        timeControlStatusObservation = nil
+    }
+
+    private func persistPlaybackProgress(trigger: String) {
+        guard let snapshot = currentPlaybackProgressSnapshot(includeCompletionThreshold: false) else { return }
+        saveLocalPlaybackProgress(
+            snapshot.isCompleted ? 0 : snapshot.playheadSeconds,
+            trigger: trigger
+        )
+    }
+
+    private func finalizePlaybackProgress(
+        trigger: String,
+        shouldSyncCompletionToBangumi: Bool
+    ) {
+        guard let snapshot = currentPlaybackProgressSnapshot(includeCompletionThreshold: true) else { return }
+
+        let persistedSeconds = snapshot.isCompleted ? 0 : snapshot.playheadSeconds
+        saveLocalPlaybackProgress(persistedSeconds, trigger: trigger)
+
+        guard shouldSyncCompletionToBangumi,
+              snapshot.isCompleted,
+              !didSyncCompletionToBangumi,
+              currentBgmUserID != nil else { return }
+
+        didSyncCompletionToBangumi = true
+
+        Task {
+            let repository = BangumiRepository()
+            do {
+                try await repository.ensureSubjectCollectionWatchingIfNeeded(
+                    subjectID: episodeInfo.subjectId
+                )
+                try await repository.markEpisodesWatched(
+                    subjectID: episodeInfo.subjectId,
+                    episodeIDs: [episodeInfo.id]
+                )
+                print("Synced watched episode to Bangumi (\(trigger)): subject=\(episodeInfo.subjectId), episode=\(episodeInfo.id)")
+            } catch {
+                didSyncCompletionToBangumi = false
+                print("Failed to sync watched episode to Bangumi (\(trigger)): \(error)")
+            }
+        }
+    }
+
+    private func currentPlaybackProgressSnapshot(
+        includeCompletionThreshold: Bool
+    ) -> PlaybackProgressSnapshot? {
+        let resolvedTime = validatedPlaybackPosition(from: player.currentTime()) ?? lastPlaybackPosition
+        guard let resolvedTime else { return nil }
+
+        lastPlaybackPosition = resolvedTime
+        let playheadSeconds = max(0, Int(resolvedTime.seconds.rounded(.down)))
+        let isCompleted =
+            didFinishPlayback
+            || (includeCompletionThreshold && completionRatio(for: playheadSeconds) >= playbackCompletionThreshold)
+
+        return PlaybackProgressSnapshot(
+            playheadSeconds: playheadSeconds,
+            isCompleted: isCompleted
+        )
+    }
+
+    private func saveLocalPlaybackProgress(_ playheadSeconds: Int, trigger: String) {
+        guard let bgmUserID = currentBgmUserID else { return }
+        guard lastSavedPlayheadSeconds != playheadSeconds else { return }
+
+        lastSavedPlayheadSeconds = playheadSeconds
+
+        Task {
+            do {
+                try await AniTVDatabase.upsertLocalEpisodeWatchState(
+                    bgmUserID: bgmUserID,
+                    episodeID: episodeInfo.id,
+                    type: LocalEpisodeWatchState.watchingType,
+                    updatedAt: 0,
+                    playheadSeconds: playheadSeconds,
+                    in: database
+                )
+                print("Saved playback progress (\(trigger)): episode=\(episodeInfo.id), seconds=\(playheadSeconds)")
+            } catch {
+                print("Failed to save playback progress (\(trigger)): \(error)")
+            }
+        }
+    }
+
+    private func completionRatio(for playheadSeconds: Int) -> Double {
+        let durationSeconds = resolvedDurationSeconds()
+        guard durationSeconds > 0 else { return 0 }
+        return min(1, Double(playheadSeconds) / Double(durationSeconds))
+    }
+
+    private func resolvedDurationSeconds() -> Int {
+        if episodeInfo.durationSeconds > 0 {
+            return episodeInfo.durationSeconds
+        }
+
+        if let duration = validatedPlaybackPosition(from: player.currentItem?.duration ?? .invalid) {
+            return max(0, Int(duration.seconds.rounded(.down)))
+        }
+
+        return 0
     }
 
     private func validatedPlaybackPosition(from time: CMTime) -> CMTime? {

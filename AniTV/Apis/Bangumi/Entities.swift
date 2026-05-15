@@ -153,6 +153,116 @@ struct SubjectImages: Codable, Sendable {
     let grid: String
 }
 
+enum SubjectCollectionType: Int, Codable, Sendable {
+    case wish = 1
+    case collected = 2
+    case watching = 3
+    case onHold = 4
+    case dropped = 5
+}
+
+struct UserCollectionsResponseDTO: Codable, Sendable {
+    let data: [UserSubjectCollectionDTO]
+    let total: Int?
+    let limit: Int?
+    let offset: Int?
+
+    init(data: [UserSubjectCollectionDTO], total: Int? = nil, limit: Int? = nil, offset: Int? = nil) {
+        self.data = data
+        self.total = total
+        self.limit = limit
+        self.offset = offset
+    }
+}
+
+struct UserSubjectCollectionDTO: Codable, Identifiable, Sendable {
+    let subjectID: Int
+    let subjectType: Int
+    let rate: Int
+    let type: Int
+    let comment: String?
+    let tags: [String]
+    let epStatus: Int
+    let volStatus: Int
+    let updatedAt: String
+    let isPrivate: Bool
+    let subject: BgmCollectionSubjectDTO?
+
+    var id: Int { subjectID }
+
+    enum CodingKeys: String, CodingKey {
+        case subjectID = "subject_id"
+        case subjectType = "subject_type"
+        case rate
+        case type
+        case comment
+        case tags
+        case epStatus = "ep_status"
+        case volStatus = "vol_status"
+        case updatedAt = "updated_at"
+        case isPrivate = "private"
+        case subject
+    }
+}
+
+struct BgmCollectionSubjectDTO: Codable, Identifiable, Sendable {
+    let id: Int
+    let type: Int
+    let name: String
+    let nameCN: String
+    let shortSummary: String
+    let date: String?
+    let images: SubjectImages
+    let volumes: Int
+    let eps: Int
+    let collectionTotal: Int
+    let score: Double
+    let rank: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case name
+        case nameCN = "name_cn"
+        case shortSummary = "short_summary"
+        case date
+        case images
+        case volumes
+        case eps
+        case collectionTotal = "collection_total"
+        case score
+        case rank
+    }
+}
+
+struct BgmUserEpisodeCollectionDTO: Codable, Identifiable, Sendable {
+    let episode: BgmEpisodeInfo
+    let type: Int
+    let updatedAt: Int
+
+    var id: Int { episode.id }
+
+    enum CodingKeys: String, CodingKey {
+        case episode
+        case type
+        case updatedAt = "updated_at"
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.episode = try container.decode(BgmEpisodeInfo.self, forKey: .episode)
+        self.type = try container.decode(Int.self, forKey: .type)
+        self.updatedAt = try container.decode(Int.self, forKey: .updatedAt)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(episode, forKey: .episode)
+        try container.encode(type, forKey: .type)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
+}
+
 // MARK: - Subject Detail DTO (/p1/subjects/{subjectID})
 struct SubjectDetailDTO: Codable, Identifiable, Sendable {
     let id: Int

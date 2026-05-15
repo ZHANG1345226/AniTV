@@ -12,18 +12,31 @@ import SQLiteData
 
 struct AnimeDetailView: View {
     let bgmId: Int
-    let openEpisodePlayer: ([BgmEpisodeInfo], BgmEpisodeInfo, String) -> Void
+    let openEpisodePlayer: ([BgmEpisodeInfo], BgmEpisodeInfo, String, Int?) -> Void
+    let playerDismissRefreshToken: Int
     @Dependency(\.defaultDatabase) private var database
     @State private var showingFullInfo = false
     @State private var subject: SubjectDetailDTO?
     @State private var backdropURL: URL?
     @State private var episodes: [BgmEpisodeInfo] = []
+    @State private var currentProfile: UserProfile?
+    @State private var userEpisodeCollectionTypesByEpisodeID: [Int: Int] = [:]
+    @State private var localResumeSecondsByEpisodeID: [Int: Int] = [:]
+    @State private var subjectCollectionType: Int?
+    @State private var didLoadSubjectCollectionState = false
+    @State private var pendingResumePromptEpisode: BgmEpisodeInfo?
+    @State private var pendingResumePromptSeconds = 0
+    @State private var detailRefreshToken = 1
+    @State private var shouldPromptMarkWatchingAfterPlayerExit = false
+    @State private var showingMarkWatchingPrompt = false
 
     init(
         bgmId: Int,
-        openEpisodePlayer: @escaping ([BgmEpisodeInfo], BgmEpisodeInfo, String) -> Void = { _, _, _ in }
+        playerDismissRefreshToken: Int = 0,
+        openEpisodePlayer: @escaping ([BgmEpisodeInfo], BgmEpisodeInfo, String, Int?) -> Void = { _, _, _, _ in }
     ) {
         self.bgmId = bgmId
+        self.playerDismissRefreshToken = playerDismissRefreshToken
         self.openEpisodePlayer = openEpisodePlayer
     }
     
@@ -103,12 +116,8 @@ struct AnimeDetailView: View {
                         
                         // 4. 操作按钮组
                         HStack(spacing: 20) {
-                            Button(action: {
-                                guard let firstEpisode = episodes.first else { return }
-                                openEpisodePlayer(episodes, firstEpisode, displayName)
-     
-                            }) {
-                                Label("开始播放", systemImage: "play.fill")
+                            Button(action: handlePlayButtonTap) {
+                                Label(playButtonTitle, systemImage: "play.fill")
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
                             }
@@ -116,40 +125,62 @@ struct AnimeDetailView: View {
                             .prefersDefaultFocus(true, in: focusNamespace)
                             .focused($focusedField, equals: "playButton")
                             
-                            Button(action: { print("Fav Tapped") }) {
-                                Label("追番", systemImage: "heart")
+                            Menu {
+                                ForEach(subjectCollectionMenuOptions, id: \.rawValue) { option in
+                                    Button {
+                                        handleSubjectCollectionMenuSelection(option)
+                                    } label: {
+                                        Label(option.title, systemImage: option.systemImage)
+                                    }
+                                }
+                            } label: {
+                                Label(subjectCollectionButtonTitle, systemImage: subjectCollectionButtonSystemImage)
                             }
                         }
                     }.focusScope(focusNamespace)
                 }
-                .padding(.horizontal, 80) // tvOS 两侧留白通常较大
+//                .padding(.horizontal, 80) // tvOS 两侧留白通常较大
                 
                 // B. 底部剧集列表 (Shelf)
                 VStack(alignment: .leading, spacing: 20) {
                     Text("剧集列表")
                         .font(.title3)
                         .fontWeight(.bold)
-                        .padding(.horizontal, 80)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 40) {
-                            // 第一个元素加 Padding，让它缩进去
-                            Spacer().frame(width: 40)
-                            
-                            ForEach(episodes.enumerated(), id: \.element.id) { index, episode in
-                                EpisodeCardView(
-                                    episodeInfo: episode,
-                                    sessionTitle: displayName,
-                                    stillURL: backdropURL,
-                                    onOpenPlayer: {
-                                        openEpisodePlayer(episodes, episode, displayName)
-                                    }
-                                )
+//                        .padding(.horizontal, 80)
+
+                    ScrollViewReader { scrollProxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 40) {
+                                ForEach(episodes, id: \.id) { episode in
+                                    EpisodeCardView(
+                                        episodeInfo: episode,
+                                        sessionTitle: displayName,
+                                        stillURL: backdropURL,
+                                        isWatched: effectiveIsWatched(for: episode),
+                                        onOpenPlayer: {
+                                            handleEpisodeCardTap(episode)
+                                        },
+                                        onToggleWatched: {
+                                            handleEpisodeWatchToggle(episode)
+                                        }
+                                    )
+                                    .id(episode.id)
+                                }
                             }
-                            
-                            Spacer().frame(width: 80)
+                            .padding(.bottom, 60)
                         }
-                        .padding(.bottom, 60) // 底部留白，防止贴边
+                        .onChange(of: firstUnwatchedEpisode?.id) { _, episodeID in
+                            guard let episodeID else { return }
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                scrollProxy.scrollTo(episodeID, anchor: .leading)
+                            }
+                        }
+                        .onAppear {
+                            guard let episodeID = firstUnwatchedEpisode?.id else { return }
+                            DispatchQueue.main.async {
+                                scrollProxy.scrollTo(episodeID, anchor: .leading)
+                            }
+                        }
                     }
                 }
             }
@@ -157,7 +188,12 @@ struct AnimeDetailView: View {
         .onAppear {
             focusedField = "playButton"
         }
-        .task {
+        .onChange(of: playerDismissRefreshToken) { _, refreshToken in
+            guard refreshToken > 0 else { return }
+            shouldPromptMarkWatchingAfterPlayerExit = true
+            detailRefreshToken += 1
+        }
+        .task(id: detailRefreshToken) {
             await loadData()
         }
         .sheet(isPresented: $showingFullInfo) {
@@ -175,6 +211,59 @@ struct AnimeDetailView: View {
                 }
             }
             .padding(60)
+        }
+        .confirmationDialog(
+            "检测到本地播放记录",
+            isPresented: Binding(
+                get: { pendingResumePromptEpisode != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingResumePromptEpisode = nil
+                        pendingResumePromptSeconds = 0
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("续播") {
+                guard let episode = pendingResumePromptEpisode else { return }
+                openEpisodePlayer(episodes, episode, displayName, pendingResumePromptSeconds)
+                pendingResumePromptEpisode = nil
+                pendingResumePromptSeconds = 0
+            }
+
+            Button("从头开始") {
+                guard let episode = pendingResumePromptEpisode else { return }
+                openEpisodePlayer(episodes, episode, displayName, nil)
+                pendingResumePromptEpisode = nil
+                pendingResumePromptSeconds = 0
+            }
+
+            Button("取消", role: .cancel) {
+                pendingResumePromptEpisode = nil
+                pendingResumePromptSeconds = 0
+            }
+        } message: {
+            if let episode = pendingResumePromptEpisode {
+                Text("第 \(formattedEpisodeNumber(for: episode)) 集存在本地播放记录，是否继续播放？")
+            }
+        }
+        .confirmationDialog(
+            "是否标记为在看",
+            isPresented: $showingMarkWatchingPrompt,
+            titleVisibility: .visible
+        ) {
+            Button("标记为在看") {
+                Task {
+                    await markSubjectAsWatchingIfNeeded()
+                }
+            }
+
+            Button("暂不", role: .cancel) {
+                shouldPromptMarkWatchingAfterPlayerExit = false
+            }
+        } message: {
+            Text("当前条目还没有收藏状态，是否将其标记为在看？")
         }
     }
     
@@ -225,8 +314,97 @@ struct AnimeDetailView: View {
         return formatter.date(from: dateString)
     }
 
+    private var watchedEpisodeIDs: Set<Int> {
+        Set(
+            userEpisodeCollectionTypesByEpisodeID.compactMap { episodeID, type in
+                type == 2 ? episodeID : nil
+            }
+        )
+    }
+
+    private var hasWatchedRecord: Bool {
+        episodes.contains(where: effectiveIsWatched(for:))
+    }
+
+    private var allEpisodesWatched: Bool {
+        !episodes.isEmpty && episodes.allSatisfy(effectiveIsWatched(for:))
+    }
+
+    private var firstUnwatchedEpisode: BgmEpisodeInfo? {
+        if hasWatchedRecord,
+           let first = episodes.first(where: { !effectiveIsWatched(for: $0) }) {
+            return first
+        }
+        return episodes.first
+    }
+
+    private var playButtonTitle: String {
+        guard hasWatchedRecord, !allEpisodesWatched, let episode = firstUnwatchedEpisode else {
+            return "开始播放"
+        }
+        return "继续播放第\(formattedEpisodeNumber(for: episode))集"
+    }
+
+    private var subjectCollectionButtonTitle: String {
+        guard let collectionType = subjectCollectionType,
+              let subjectCollectionType = SubjectCollectionType(rawValue: collectionType) else {
+            return "追番"
+        }
+
+        switch subjectCollectionType {
+        case .wish:
+            return "想看"
+        case .collected:
+            return "看过"
+        case .watching:
+            return "在看"
+        case .onHold:
+            return "搁置"
+        case .dropped:
+            return "抛弃"
+        }
+    }
+
+    private var subjectCollectionButtonSystemImage: String {
+        guard let collectionType = subjectCollectionType,
+              let subjectCollectionType = SubjectCollectionType(rawValue: collectionType) else {
+            return "star"
+        }
+
+        switch subjectCollectionType {
+        case .wish:
+            return "calendar.badge.plus"
+        case .collected:
+            return "checkmark.circle"
+        case .watching:
+            return "livephoto.play"
+        case .onHold:
+            return "clock.badge.questionmark"
+        case .dropped:
+            return "slash.circle"
+        }
+    }
+
+    private var subjectCollectionMenuOptions: [SubjectCollectionType] {
+        [.wish, .watching, .collected, .onHold, .dropped]
+    }
+
     private func loadData() async {
         let bgmRepo = BangumiRepository()
+        var authenticatedProfile: UserProfile?
+        await MainActor.run {
+            didLoadSubjectCollectionState = false
+        }
+        do {
+            let profile = try await AniTVDatabase.currentUserProfile(in: database)
+            authenticatedProfile = profile
+            await MainActor.run {
+                currentProfile = profile
+            }
+        } catch {
+            print("Failed to load current profile: \(error)")
+        }
+
         do {
             let detail = try await bgmRepo.getSubject(subjectID: bgmId)
             await MainActor.run {
@@ -259,6 +437,273 @@ struct AnimeDetailView: View {
         } catch {
             print("Failed to load episodes: \(error)")
         }
+
+        if let profile = authenticatedProfile,
+           profile.isAuthenticated,
+           let bgmUserID = profile.effectiveBgmUserID {
+            await refreshBangumiCollectionStates()
+
+            do {
+                let localStates = try await AniTVDatabase.localEpisodeWatchStates(
+                    bgmUserID: bgmUserID,
+                    episodeIDs: episodes.map(\.id),
+                    in: database
+                )
+                await MainActor.run {
+                    localResumeSecondsByEpisodeID = Dictionary(
+                        uniqueKeysWithValues: localStates.map { ($0.episodeID, $0.playheadSeconds) }
+                    )
+                }
+            } catch {
+                print("Failed to load local episode watch states: \(error)")
+            }
+        } else {
+            await MainActor.run {
+                subjectCollectionType = nil
+                didLoadSubjectCollectionState = false
+                userEpisodeCollectionTypesByEpisodeID = [:]
+                localResumeSecondsByEpisodeID = [:]
+            }
+        }
+
+        await MainActor.run {
+            if shouldPromptMarkWatchingAfterPlayerExit,
+               currentProfile?.isAuthenticated == true,
+               didLoadSubjectCollectionState,
+               subjectCollectionType == nil {
+                showingMarkWatchingPrompt = true
+            } else {
+                shouldPromptMarkWatchingAfterPlayerExit = false
+                showingMarkWatchingPrompt = false
+            }
+        }
+    }
+
+    private func formattedEpisodeNumber(for episode: BgmEpisodeInfo) -> String {
+        let value = episode.ep > 0 ? episode.ep : episode.sort
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(value)
+    }
+
+    private func handlePlayButtonTap() {
+        guard let episode = firstUnwatchedEpisode else { return }
+
+        Task {
+            await openEpisodeFromPrimaryAction(episode)
+        }
+    }
+
+    private func handleEpisodeCardTap(_ episode: BgmEpisodeInfo) {
+        Task {
+            await openEpisodeFromEpisodeCard(episode)
+        }
+    }
+
+    private func handleEpisodeWatchToggle(_ episode: BgmEpisodeInfo) {
+        Task {
+            await toggleEpisodeWatchStatus(episode)
+        }
+    }
+
+    private func handleSubjectCollectionMenuSelection(_ collectionType: SubjectCollectionType) {
+        Task {
+            await updateSubjectCollection(collectionType)
+        }
+    }
+
+    private func openEpisodeFromPrimaryAction(_ episode: BgmEpisodeInfo) async {
+        let resumeSeconds = await loadLocalResumeSeconds(for: episode)
+        await MainActor.run {
+            guard let resumeSeconds, resumeSeconds > 0 else {
+                openEpisodePlayer(episodes, episode, displayName, nil)
+                return
+            }
+            pendingResumePromptEpisode = episode
+            pendingResumePromptSeconds = resumeSeconds
+        }
+    }
+
+    private func openEpisodeFromEpisodeCard(_ episode: BgmEpisodeInfo) async {
+        if effectiveIsWatched(for: episode) {
+            await MainActor.run {
+                openEpisodePlayer(episodes, episode, displayName, nil)
+            }
+            return
+        }
+
+        let resumeSeconds = await loadLocalResumeSeconds(for: episode)
+        await MainActor.run {
+            guard let resumeSeconds, resumeSeconds > 0 else {
+                openEpisodePlayer(episodes, episode, displayName, nil)
+                return
+            }
+            pendingResumePromptEpisode = episode
+            pendingResumePromptSeconds = resumeSeconds
+        }
+    }
+
+    private func toggleEpisodeWatchStatus(_ episode: BgmEpisodeInfo) async {
+        guard currentProfile?.isAuthenticated == true else { return }
+        let bgmUserID = currentProfile?.effectiveBgmUserID
+
+        let shouldMarkWatched = !effectiveIsWatched(for: episode)
+        let repository = BangumiRepository()
+
+        do {
+            try await repository.setEpisodeCollectionType(
+                episodeID: episode.id,
+                type: shouldMarkWatched ? 2 : 0
+            )
+
+            if shouldMarkWatched, let bgmUserID {
+                try await AniTVDatabase.upsertLocalEpisodeWatchState(
+                    bgmUserID: bgmUserID,
+                    episodeID: episode.id,
+                    type: LocalEpisodeWatchState.watchingType,
+                    updatedAt: 0,
+                    playheadSeconds: 0,
+                    in: database
+                )
+            }
+
+            if shouldMarkWatched {
+                let didFinishAllEpisodes = episodes.allSatisfy { candidate in
+                    if candidate.id == episode.id {
+                        return true
+                    }
+                    return effectiveIsWatched(for: candidate)
+                }
+                let targetSubjectCollectionType =
+                    didFinishAllEpisodes
+                    ? SubjectCollectionType.collected.rawValue
+                    : SubjectCollectionType.watching.rawValue
+
+                if subjectCollectionType != targetSubjectCollectionType {
+                    try await repository.setSubjectCollectionType(
+                        subjectID: bgmId,
+                        type: targetSubjectCollectionType
+                    )
+                }
+            } else if subjectCollectionType == SubjectCollectionType.collected.rawValue {
+                try await repository.setSubjectCollectionType(
+                    subjectID: bgmId,
+                    type: SubjectCollectionType.watching.rawValue
+                )
+            }
+
+            await MainActor.run {
+                localResumeSecondsByEpisodeID[episode.id] = 0
+                detailRefreshToken += 1
+            }
+        } catch {
+            print("Failed to update episode watch status: \(error)")
+        }
+    }
+
+    private func markSubjectAsWatchingIfNeeded() async {
+        guard currentProfile?.isAuthenticated == true else { return }
+
+        do {
+            try await BangumiRepository().setSubjectCollectionType(
+                subjectID: bgmId,
+                type: SubjectCollectionType.watching.rawValue
+            )
+            await MainActor.run {
+                shouldPromptMarkWatchingAfterPlayerExit = false
+                showingMarkWatchingPrompt = false
+                detailRefreshToken += 1
+            }
+        } catch {
+            print("Failed to mark subject as watching: \(error)")
+        }
+    }
+
+    private func refreshBangumiCollectionStates() async {
+        let bgmRepo = BangumiRepository()
+
+        do {
+            let collection = try await bgmRepo.currentUserCollection(
+                subjectID: bgmId
+            )
+            await MainActor.run {
+                subjectCollectionType = collection?.type
+                didLoadSubjectCollectionState = true
+            }
+        } catch {
+            print("Failed to load user subject collection: \(error)")
+            await MainActor.run {
+                subjectCollectionType = nil
+                didLoadSubjectCollectionState = true
+            }
+        }
+
+        do {
+            let collections = try await bgmRepo.fetchUserEpisodeCollections(
+                subjectID: bgmId
+            )
+            await MainActor.run {
+                userEpisodeCollectionTypesByEpisodeID = Dictionary(
+                    uniqueKeysWithValues: collections.map { ($0.episode.id, $0.type) }
+                )
+            }
+        } catch {
+            print("Failed to load user episode collections: \(error)")
+        }
+    }
+
+    private func updateSubjectCollection(_ collectionType: SubjectCollectionType) async {
+        guard currentProfile?.isAuthenticated == true else { return }
+
+        let repository = BangumiRepository()
+
+        do {
+            try await repository.setSubjectCollectionType(
+                subjectID: bgmId,
+                type: collectionType.rawValue
+            )
+
+            await refreshBangumiCollectionStates()
+            await MainActor.run {
+                shouldPromptMarkWatchingAfterPlayerExit = false
+                showingMarkWatchingPrompt = false
+                detailRefreshToken += 1
+            }
+        } catch {
+            print("Failed to update subject collection: \(error)")
+        }
+    }
+
+    private func loadLocalResumeSeconds(for episode: BgmEpisodeInfo) async -> Int? {
+        if let playheadSeconds = localResumeSecondsByEpisodeID[episode.id], playheadSeconds > 0 {
+            return playheadSeconds
+        }
+        guard let bgmUserID = currentProfile?.effectiveBgmUserID else { return nil }
+        do {
+            let localState = try await AniTVDatabase.localEpisodeWatchState(
+                bgmUserID: bgmUserID,
+                episodeID: episode.id,
+                in: database
+            )
+            guard let playheadSeconds = localState?.playheadSeconds, playheadSeconds > 0 else {
+                return nil
+            }
+            await MainActor.run {
+                localResumeSecondsByEpisodeID[episode.id] = playheadSeconds
+            }
+            return playheadSeconds
+        } catch {
+            print("Failed to load local episode watch state: \(error)")
+            return nil
+        }
+    }
+
+    private func effectiveIsWatched(for episode: BgmEpisodeInfo) -> Bool {
+        if let localResumeSeconds = localResumeSecondsByEpisodeID[episode.id], localResumeSeconds > 0 {
+            return false
+        }
+        return watchedEpisodeIDs.contains(episode.id)
     }
 
 }
@@ -273,6 +718,38 @@ struct BadgeView: View {
             .padding(.vertical, 4)
             .background(.white.opacity(0.2))
             .cornerRadius(4)
+    }
+}
+
+private extension SubjectCollectionType {
+    var title: String {
+        switch self {
+        case .wish:
+            return "想看"
+        case .collected:
+            return "看过"
+        case .watching:
+            return "在看"
+        case .onHold:
+            return "搁置"
+        case .dropped:
+            return "抛弃"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .wish:
+            return "calendar.badge.plus"
+        case .collected:
+            return "checkmark.circle"
+        case .watching:
+            return "livephoto.play"
+        case .onHold:
+            return "clock.badge.questionmark"
+        case .dropped:
+            return "slash.circle"
+        }
     }
 }
 
@@ -330,7 +807,7 @@ extension SelectorMediaSourceArguments {
 
 struct AnimeDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        AnimeDetailView(bgmId: 515759, openEpisodePlayer: { _, _, _ in })
+        AnimeDetailView(bgmId: 515759, openEpisodePlayer: { _, _, _, _ in })
         .previewDevice("Apple TV 4K (3rd generation)")
     }
 }

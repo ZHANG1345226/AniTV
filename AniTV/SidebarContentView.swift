@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreImage.CIFilterBuiltins
+import SQLiteData
 
 enum NavigationCategory: String, Hashable {
     case search
@@ -23,39 +24,61 @@ struct SidebarContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
-    @State private var currentUser = "User"
+    @State private var currentProfile: UserProfile?
+    @State private var homeFocusRestoreToken = 0
+    @State private var homeContinueWatchingRefreshToken = 0
+    @State private var homeLastFocusedPosterID: Int?
+    @State private var homePendingRestorePosterID: Int?
+    @State private var collectionFocusRestoreToken = 0
+    @State private var collectionLastFocusedPosterID: Int?
+    @State private var collectionPendingRestorePosterID: Int?
     @State private var timelineFocusRestoreToken = 0
     @State private var timelineLastFocusedEntryID: String?
     @State private var timelinePendingRestoreEntryID: String?
+    @Dependency(\.defaultDatabase) private var database
     @FocusState private var focusedCategory: NavigationCategory?
     @FocusState private var isProfileButtonFocused: Bool
     @Namespace private var sidebarFocusScope
 
+    private var currentUserName: String {
+        currentProfile?.effectiveNickname ?? "Guest"
+    }
+
+    private var currentUserAvatarURL: URL? {
+        guard let avatar = currentProfile?.effectiveAvatar else { return nil }
+        return URL(string: avatar)
+    }
+
+    private var shouldPreferSidebarFocus: Bool {
+        columnVisibility != .detailOnly && presentedAnimeDetailID == nil
+    }
+
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+            NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
                 List(selection: $selectedCategory) {
                     Section {
                         Button {
                             showingProfileSelection = true
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.white)
+                                SidebarUserAvatarView(url: currentUserAvatarURL)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     ZStack(alignment: .leading) {
-                                        Text(currentUser)
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
+                                        Text(currentUserName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.white.opacity(0.9))
                                             .opacity(isProfileButtonFocused ? 0 : 1)
 
-                                        Text(currentUser)
-                                            .font(.headline)
+                                        Text(currentUserName)
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.white)
                                             .opacity(isProfileButtonFocused ? 1 : 0)
                                     }
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
                                     if isProfileButtonFocused {
                                         Text("切换账户")
@@ -66,9 +89,7 @@ struct SidebarContentView: View {
                                             )
                                     }
                                 }
-                                .frame(maxHeight: .infinity, alignment: .center)
-
-                                Spacer()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             }
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .padding(.vertical, 6)
@@ -82,31 +103,31 @@ struct SidebarContentView: View {
                         NavigationLink(value: NavigationCategory.search) {
                             Label("搜索", systemImage: "magnifyingglass")
                         }
-                        .prefersDefaultFocus(selectedCategory == .search, in: sidebarFocusScope)
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .search, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .search)
 
                         NavigationLink(value: NavigationCategory.home) {
                             Label("首页", systemImage: "house")
                         }
-                        .prefersDefaultFocus(selectedCategory == .home, in: sidebarFocusScope)
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .home, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .home)
 
                         NavigationLink(value: NavigationCategory.animeList) {
-                            Label("我的追番", systemImage: "play.tv")
+                            Label("收藏", systemImage: "play.tv")
                         }
-                        .prefersDefaultFocus(selectedCategory == .animeList, in: sidebarFocusScope)
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .animeList, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .animeList)
 
                         NavigationLink(value: NavigationCategory.timeline) {
                             Label("时间线", systemImage: "calendar")
                         }
-                        .prefersDefaultFocus(selectedCategory == .timeline, in: sidebarFocusScope)
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .timeline, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .timeline)
 
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
-                        .prefersDefaultFocus(selectedCategory == .settings, in: sidebarFocusScope)
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .settings, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .settings)
                     }.padding(.top, 60)
                 }
@@ -115,6 +136,13 @@ struct SidebarContentView: View {
                 SidebarDetailView(
                     selectedCategory: $selectedCategory,
                     columnVisibility: $columnVisibility,
+                    homeFocusRestoreToken: homeFocusRestoreToken,
+                    homeContinueWatchingRefreshToken: homeContinueWatchingRefreshToken,
+                    homeLastFocusedPosterID: $homeLastFocusedPosterID,
+                    homePendingRestorePosterID: $homePendingRestorePosterID,
+                    collectionFocusRestoreToken: collectionFocusRestoreToken,
+                    collectionLastFocusedPosterID: $collectionLastFocusedPosterID,
+                    collectionPendingRestorePosterID: $collectionPendingRestorePosterID,
                     timelineFocusRestoreToken: timelineFocusRestoreToken,
                     timelineLastFocusedEntryID: $timelineLastFocusedEntryID,
                     timelinePendingRestoreEntryID: $timelinePendingRestoreEntryID,
@@ -122,19 +150,35 @@ struct SidebarContentView: View {
                 )
             }
             .disabled(presentedAnimeDetailID != nil)
-            .allowsHitTesting(presentedAnimeDetailID == nil)
 
             if let bgmId = presentedAnimeDetailID {
                 AnimeDetailScreen(
                     bgmId: bgmId,
                     onClose: {
+                        let categoryToRestore = selectedCategory ?? .home
+                        let homeRestoreID = homeLastFocusedPosterID
+                        let collectionRestoreID = collectionLastFocusedPosterID
+                        let shouldRefreshHomeContinueWatching = categoryToRestore == .home
                         let shouldRestoreTimelineFocus = selectedCategory == .timeline
                         let restoreEntryID = timelineLastFocusedEntryID
+                        switch categoryToRestore {
+                        case .home:
+                            prepareHomeFocusRestore(homeRestoreID)
+                        case .animeList:
+                            prepareCollectionFocusRestore(collectionRestoreID)
+                        default:
+                            break
+                        }
+
                         var transaction = Transaction()
                         transaction.disablesAnimations = true
                         withTransaction(transaction) {
                             columnVisibility = .detailOnly
                             presentedAnimeDetailID = nil
+                        }
+
+                        if shouldRefreshHomeContinueWatching {
+                            homeContinueWatchingRefreshToken += 1
                         }
 
                         if shouldRestoreTimelineFocus {
@@ -150,19 +194,37 @@ struct SidebarContentView: View {
             }
         }
         .sheet(isPresented: $showingProfileSelection) {
-            ProfileSwitcherView(currentUser: $currentUser)
+            ProfileSwitcherView(currentUser: currentUserName)
         }
         .onAppear {
             selectedCategory = NavigationCategory(rawValue: selectedCategoryRawValue) ?? .home
             requestSidebarFocus()
         }
+        .task {
+            await loadCurrentProfile()
+        }
         .onChange(of: selectedCategory) { _, newValue in
             selectedCategoryRawValue = newValue?.rawValue ?? NavigationCategory.home.rawValue
         }
         .onChange(of: columnVisibility) { oldValue, newValue in
-            guard oldValue == .detailOnly, newValue != .detailOnly else { return }
-            requestSidebarFocus()
+            if oldValue == .detailOnly, newValue != .detailOnly {
+                requestSidebarFocus()
+            } else if oldValue != .detailOnly, newValue == .detailOnly {
+                prepareCurrentDetailFocusRestore()
+            }
         }
+    }
+
+    private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { columnVisibility },
+            set: { newValue in
+                if columnVisibility != .detailOnly, newValue == .detailOnly {
+                    prepareCurrentDetailFocusRestore()
+                }
+                columnVisibility = newValue
+            }
+        )
     }
 
     private func openAnimeDetail(_ bgmId: Int) {
@@ -172,22 +234,110 @@ struct SidebarContentView: View {
     private func requestSidebarFocus() {
         Task { @MainActor in
             focusedCategory = nil
+            isProfileButtonFocused = false
             await Task.yield()
-            guard columnVisibility != .detailOnly else { return }
+            guard columnVisibility != .detailOnly, presentedAnimeDetailID == nil else { return }
             focusedCategory = selectedCategory ?? .home
             resetFocus(in: sidebarFocusScope)
         }
     }
+
+    private func prepareCurrentDetailFocusRestore() {
+        focusedCategory = nil
+        isProfileButtonFocused = false
+
+        switch selectedCategory ?? .home {
+        case .home:
+            prepareHomeFocusRestore(homeLastFocusedPosterID)
+        case .animeList:
+            prepareCollectionFocusRestore(collectionLastFocusedPosterID)
+        default:
+            break
+        }
+    }
+
+    private func prepareHomeFocusRestore(_ posterID: Int?) {
+        if let posterID {
+            homePendingRestorePosterID = posterID
+        }
+        homeFocusRestoreToken += 1
+
+        guard let posterID else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1200))
+            if homePendingRestorePosterID == posterID {
+                homePendingRestorePosterID = nil
+            }
+        }
+    }
+
+    private func prepareCollectionFocusRestore(_ posterID: Int?) {
+        if let posterID {
+            collectionPendingRestorePosterID = posterID
+        }
+        collectionFocusRestoreToken += 1
+
+        guard let posterID else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1200))
+            if collectionPendingRestorePosterID == posterID {
+                collectionPendingRestorePosterID = nil
+            }
+        }
+    }
+
+    private func loadCurrentProfile() async {
+        do {
+            currentProfile = try await AniTVDatabase.currentUserProfile(in: database)
+        } catch {
+            print("[SidebarContentView] Failed to load current user profile: \(error)")
+            currentProfile = nil
+        }
+    }
+}
+
+private struct SidebarUserAvatarView: View {
+    let url: URL?
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        defaultAvatar
+                    }
+                }
+            } else {
+                defaultAvatar
+            }
+        }
+        .frame(width: 48, height: 48)
+        .clipShape(Circle())
+    }
+
+    private var defaultAvatar: some View {
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.white)
+    }
 }
 
 private enum AnimeDetailRoute: Hashable {
-    case player([BgmEpisodeInfo], Int, String)
+    case player([BgmEpisodeInfo], Int, String, Int?)
 }
 
 private struct AnimeEpisodePlayerScreen: View {
     let episodes: [BgmEpisodeInfo]
     let initialEpisodeID: Int
     let sessionTitle: String
+    let initialPlaybackPositionSeconds: Int?
+    let onScreenDisappear: () -> Void
 
     @State private var currentEpisodeIndex: Int = 0
 
@@ -202,6 +352,7 @@ private struct AnimeEpisodePlayerScreen: View {
                 AnimePlayerContainerView(
                     episodeInfo: currentEpisode,
                     sessionTitle: sessionTitle,
+                    initialPlaybackPositionSeconds: currentEpisode.id == initialEpisodeID ? initialPlaybackPositionSeconds : nil,
                     onPlaybackCompleted: playNextEpisodeIfPossible
                 )
                 .id(currentEpisode.id)
@@ -212,6 +363,9 @@ private struct AnimeEpisodePlayerScreen: View {
         .onAppear {
             currentEpisodeIndex = episodes.firstIndex(where: { $0.id == initialEpisodeID }) ?? 0
         }
+        .onDisappear {
+            onScreenDisappear()
+        }
     }
 
     private func playNextEpisodeIfPossible() {
@@ -219,6 +373,7 @@ private struct AnimeEpisodePlayerScreen: View {
         guard episodes.indices.contains(nextIndex) else { return }
         currentEpisodeIndex = nextIndex
     }
+
 }
 
 private struct AnimeDetailScreen: View {
@@ -226,6 +381,7 @@ private struct AnimeDetailScreen: View {
     let bgmId: Int
     let onClose: () -> Void
     @State private var navigationPath: [AnimeDetailRoute] = []
+    @State private var playerDismissRefreshToken = 0
     @Namespace private var detailFocusScope
 
     var body: some View {
@@ -236,8 +392,9 @@ private struct AnimeDetailScreen: View {
 
                 AnimeDetailView(
                     bgmId: bgmId,
-                    openEpisodePlayer: { episodes, episodeInfo, sessionTitle in
-                        navigationPath.append(.player(episodes, episodeInfo.id, sessionTitle))
+                    playerDismissRefreshToken: playerDismissRefreshToken,
+                    openEpisodePlayer: { episodes, episodeInfo, sessionTitle, initialPlaybackPositionSeconds in
+                        navigationPath.append(.player(episodes, episodeInfo.id, sessionTitle, initialPlaybackPositionSeconds))
                     }
                 )
             }
@@ -247,11 +404,15 @@ private struct AnimeDetailScreen: View {
             .navigationBarBackButtonHidden(true)
             .navigationDestination(for: AnimeDetailRoute.self) { route in
                 switch route {
-                case .player(let episodes, let episodeID, let sessionTitle):
+                case .player(let episodes, let episodeID, let sessionTitle, let initialPlaybackPositionSeconds):
                     AnimeEpisodePlayerScreen(
                         episodes: episodes,
                         initialEpisodeID: episodeID,
-                        sessionTitle: sessionTitle
+                        sessionTitle: sessionTitle,
+                        initialPlaybackPositionSeconds: initialPlaybackPositionSeconds,
+                        onScreenDisappear: {
+                            playerDismissRefreshToken += 1
+                        }
                     )
                     .toolbar(.hidden, for: .navigationBar)
                     .navigationBarBackButtonHidden(true)
@@ -274,6 +435,13 @@ private struct AnimeDetailScreen: View {
 private struct SidebarDetailView: View {
     @Binding var selectedCategory: NavigationCategory?
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    let homeFocusRestoreToken: Int
+    let homeContinueWatchingRefreshToken: Int
+    @Binding var homeLastFocusedPosterID: Int?
+    @Binding var homePendingRestorePosterID: Int?
+    let collectionFocusRestoreToken: Int
+    @Binding var collectionLastFocusedPosterID: Int?
+    @Binding var collectionPendingRestorePosterID: Int?
     let timelineFocusRestoreToken: Int
     @Binding var timelineLastFocusedEntryID: String?
     @Binding var timelinePendingRestoreEntryID: String?
@@ -288,9 +456,20 @@ private struct SidebarDetailView: View {
                     openAnimeDetail: openAnimeDetail
                 )
             case .home:
-                HomeView(openAnimeDetail: openAnimeDetail)
+                HomeView(
+                    openAnimeDetail: openAnimeDetail,
+                    focusRestoreToken: homeFocusRestoreToken,
+                    continueWatchingRefreshToken: homeContinueWatchingRefreshToken,
+                    lastFocusedPosterID: $homeLastFocusedPosterID,
+                    pendingRestorePosterID: $homePendingRestorePosterID
+                )
             case .animeList:
-                AnimeListPlaceholderView(columnVisibility: $columnVisibility)
+                CollectionView(
+                    openAnimeDetail: openAnimeDetail,
+                    focusRestoreToken: collectionFocusRestoreToken,
+                    lastFocusedPosterID: $collectionLastFocusedPosterID,
+                    pendingRestorePosterID: $collectionPendingRestorePosterID
+                )
             case .timeline:
                 TimelineView(
                     focusRestoreToken: timelineFocusRestoreToken,
@@ -359,27 +538,14 @@ private struct SearchPlaceholderView: View {
     }
 }
 
-private struct AnimeListPlaceholderView: View {
-    @Binding var columnVisibility: NavigationSplitViewVisibility
-
-    var body: some View {
-        SidebarPlaceholderView(
-            title: "我的追番",
-            systemImage: "play.tv",
-            description: "这里可以展示你已收藏、追更中的番剧列表。",
-            columnVisibility: $columnVisibility
-        )
-    }
-}
-
 private struct SettingsPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @EnvironmentObject private var bangumiOAuthManager: BangumiOAuthManager
 
     private enum BangumiOAuthConfig {
-        static let clientID = BangumiOAuthManager.sharedClientID
+        static let clientID = AppConfig.bangumiOAuthClientID
         static let appCallbackURL = BangumiOAuthManager.defaultRedirectURI
-        static let secret = BangumiOAuthManager.sharedClientSecret
+        static let secret = AppConfig.bangumiOAuthClientSecret
         static let relayEndpoint = "/oauth/bangumi"
     }
 
@@ -413,12 +579,6 @@ private struct SettingsPlaceholderView: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 10) {
-                SettingsValueRow(title: "Client ID", value: BangumiOAuthConfig.clientID)
-                SettingsValueRow(title: "Bangumi Redirect URI", value: BangumiOAuthConfig.appCallbackURL)
-                SettingsValueRow(title: "Callback Scheme", value: BangumiOAuthManager.callbackScheme)
-            }
-
             Button {
                 startBangumiLogin()
             } label: {
@@ -431,34 +591,6 @@ private struct SettingsPlaceholderView: View {
             Label(bangumiOAuthManager.statusMessage, systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-
-            if !bangumiOAuthManager.accessToken.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Access Token")
-                        .font(.headline)
-
-                    Text(bangumiOAuthManager.accessToken)
-                        .font(.footnote.monospaced())
-                        .lineLimit(4)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-            }
-
-            if !bangumiOAuthManager.rawResponse.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Token Response")
-                        .font(.headline)
-
-                    Text(bangumiOAuthManager.rawResponse)
-                        .font(.footnote.monospaced())
-                        .lineLimit(6)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-            }
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -482,7 +614,6 @@ private struct SettingsPlaceholderView: View {
                 LANLoginQRCodeView(urlString: bangumiOAuthManager.lanEntryURL)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    SettingsValueRow(title: "共享 App ID", value: BangumiOAuthConfig.clientID)
                     SettingsValueRow(title: "Bangumi Redirect URI", value: bangumiOAuthManager.lanRedirectURI)
                     SettingsValueRow(title: "扫码入口", value: bangumiOAuthManager.lanEntryURL)
                     SettingsValueRow(title: "授权回调接口", value: BangumiOAuthConfig.relayEndpoint)
@@ -604,7 +735,7 @@ private struct SidebarPlaceholderView: View {
 
 struct ProfileSwitcherView: View {
     @Environment(\.dismiss) private var dismiss
-    @Binding var currentUser: String
+    let currentUser: String
 
     private let users = ["User", "追番狂魔", "游客模式"]
 
@@ -612,7 +743,6 @@ struct ProfileSwitcherView: View {
         NavigationStack {
             List(users, id: \.self) { user in
                 Button {
-                    currentUser = user
                     dismiss()
                 } label: {
                     HStack {

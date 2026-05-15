@@ -51,8 +51,8 @@ struct TMDBRepository {
             print("[TMDBRepository] Cache read error: \(error)")
         }
 
-        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "TMDBApiKey") as? String,
-              !apiKey.isEmpty else {
+        let apiKey = AppConfig.tmdbAPIKey
+        guard !apiKey.isEmpty else {
             print("[TMDBRepository] Missing TMDBApiKey in Info.plist")
             return ""
         }

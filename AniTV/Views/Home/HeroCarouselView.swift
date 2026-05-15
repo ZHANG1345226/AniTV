@@ -25,6 +25,19 @@ final class HeroCarouselStore: ObservableObject {
 
     private init() {}
 
+    var currentItem: AnimeSubject? {
+        guard items.indices.contains(selection) else { return nil }
+        return items[selection]
+    }
+
+    var insertionEdge: Edge {
+        transitionDirection >= 0 ? .trailing : .leading
+    }
+
+    var removalEdge: Edge {
+        transitionDirection >= 0 ? .leading : .trailing
+    }
+
     func loadIfNeeded(database: DatabaseWriter) async {
         guard !hasLoaded else { return }
         hasLoaded = true
@@ -82,6 +95,15 @@ final class HeroCarouselStore: ObservableObject {
         default: return "other"
         }
     }
+
+    func moveSelection(by step: Int) {
+        guard !items.isEmpty else { return }
+        let nextIndex = (selection + step + items.count) % items.count
+        transitionDirection = step >= 0 ? 1 : -1
+        withAnimation(.easeInOut(duration: 0.45)) {
+            selection = nextIndex
+        }
+    }
 }
 
 struct HeroCarouselView: View {
@@ -95,78 +117,41 @@ struct HeroCarouselView: View {
     
     @Dependency(\.defaultDatabase) private var database
     
-    private var currentItem: AnimeSubject? {
-        guard store.items.indices.contains(store.selection) else { return nil }
-        return store.items[store.selection]
-    }
-    
-    private func moveSelection(by step: Int, isManual: Bool = true) {
-        guard !store.items.isEmpty else { return }
-        let nextIndex = (store.selection + step + store.items.count) % store.items.count
-        store.transitionDirection = step >= 0 ? 1 : -1
-        if isManual {
-            isAutoScrolling = false
-        }
-        withAnimation(.easeInOut(duration: 0.45)) {
-            store.selection = nextIndex
-        }
-    }
-    
-    private var insertionEdge: Edge {
-        store.transitionDirection >= 0 ? .trailing : .leading
-    }
-    
-    private var removalEdge: Edge {
-        store.transitionDirection >= 0 ? .leading : .trailing
-    }
-    
     var body: some View {
         ZStack {
             if store.isLoading {
-                ProgressView().tint(.white)
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if !store.exceptionMessage.isEmpty {
                 Text(store.exceptionMessage)
             } else if store.items.isEmpty {
                 Text("暂无推荐内容")
             } else {
-                GeometryReader { proxy in
+                GeometryReader { _ in
                     ZStack(alignment: .bottomLeading) {
-                        if let currentItem {
+                        if let currentItem = store.currentItem {
                             HeroCardView(item: currentItem)
                                 .id(currentItem.id)
                                 .transition(
                                     .asymmetric(
-                                        insertion: .move(edge: insertionEdge).combined(with: .opacity),
-                                        removal: .move(edge: removalEdge).combined(with: .opacity)
+                                        insertion: .move(edge: store.insertionEdge).combined(with: .opacity),
+                                        removal: .move(edge: store.removalEdge).combined(with: .opacity)
                                     )
                                 )
                         }
-
-                        if let currentItem {
-                            carouselOverlay(for: currentItem, width: proxy.size.width)
-                        }
-
-                        VStack {
-                            Spacer()
-                            CustomIndexBar(
-                                numberOfPages: store.items.count,
-                                currentPage: store.selection,
-                                duration: autoScrollDuration
-                            )
-                            .padding(.bottom, 40)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await store.loadIfNeeded(database: database) }
         
         // 🎯 自动滚动
         .onReceive(timer) { _ in
             guard !store.items.isEmpty, !store.isLoading else { return }
             isAutoScrolling = true
-            moveSelection(by: 1, isManual: false)
+            store.moveSelection(by: 1)
         }
         .onChange(of: store.selection) { _, _ in
             if !isAutoScrolling {
@@ -176,65 +161,6 @@ struct HeroCarouselView: View {
             }
         }
     }
-    
-    @ViewBuilder
-    private func carouselOverlay(for item: AnimeSubject, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if item.endDate == nil, let airDate = item.startDate {
-                NewArrivalPill(text: airDate.formatted(.dateTime.weekday(.wide)))
-            }
-            
-            Text(item.displayName)
-                .font(.system(size: 64, weight: .heavy))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .shadow(radius: 4)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            HStack(spacing: 12) {
-                Text(item.isMovie ? "劇場版" : "新番組")
-                Text("·")
-                Text("评分 \(item.scoreString)")
-                    .foregroundStyle(.yellow)
-                if item.displayOriginalTitle {
-                    Text("·")
-                    Text(item.title)
-                }
-            }
-            .font(.headline)
-            .foregroundStyle(.white.opacity(0.8))
-            
-            Text(item.info)
-                .font(.body)
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(2)
-            
-            ActionButtonsView(
-                anime: item,
-                openAnimeDetail: openAnimeDetail,
-                onMoveToPrevious: { moveSelection(by: -1) },
-                onMoveToNext: { moveSelection(by: 1) }
-            )
-        }
-        .padding(40)
-        .background(
-            EllipticalGradient(
-                gradient: Gradient(colors: [
-                    Color.black.opacity(0.7),
-                    Color.black.opacity(0.5),
-                    Color.black.opacity(0.0)
-                ]),
-                center: .center,
-                startRadiusFraction: 0.0,
-                endRadiusFraction: 1.0
-            )
-            .blur(radius: 50)
-        )
-        .padding(.horizontal, 50)
-        .padding(.bottom, 200)
-        .frame(maxWidth: width * 0.6, alignment: .leading)
-    }
-    
     private func resetTimer() {
         timer.upstream.connect().cancel()
         timer = Timer.publish(every: autoScrollDuration, on: .main, in: .common).autoconnect()

@@ -8,13 +8,14 @@
 import Foundation
 import AuthenticationServices
 import Combine
+import SQLiteData
 
 @MainActor
 final class BangumiOAuthManager: NSObject, ObservableObject {
     static let callbackScheme = "anitv"
     static let defaultRedirectURI = "anitv://oauth/bangumi"
-    static let sharedClientID = "bgm593869da1c4c69943"
-    static let sharedClientSecret = "e6f9b56806e07e6664f9ea877afdec93"
+    static let sharedClientID = AppConfig.bangumiOAuthClientID
+    static let sharedClientSecret = AppConfig.bangumiOAuthClientSecret
 
     @Published var isAuthenticating = false
     @Published var statusMessage = "尚未登录 Bangumi。"
@@ -24,6 +25,7 @@ final class BangumiOAuthManager: NSObject, ObservableObject {
     @Published var lanServiceStatus = "局域网登录服务尚未启动。"
     @Published var lanEntryURL = ""
     @Published var lanRedirectURI = ""
+    @Published var authenticatedSession: BangumiAuthenticatedSession?
 
     private var authenticationSession: ASWebAuthenticationSession?
     private var lanOAuthServer: BangumiLANOAuthServer?
@@ -137,7 +139,10 @@ final class BangumiOAuthManager: NSObject, ObservableObject {
                         clientSecret: normalizedClientSecret,
                         redirectURI: normalizedRedirectURI
                     )
-                    self.applyTokenResponse(tokenResponse)
+                    try await self.applyTokenResponse(
+                        tokenResponse,
+                        redirectURI: normalizedRedirectURI
+                    )
                 } catch {
                     self.statusMessage = error.localizedDescription
                     print("[BangumiOAuth] Callback handling failed: \(error)")
@@ -258,8 +263,11 @@ final class BangumiOAuthManager: NSObject, ObservableObject {
                 clientSecret: Self.sharedClientSecret,
                 redirectURI: lanRedirectURI
             )
-            applyTokenResponse(tokenResponse)
-            statusMessage = "局域网登录成功，access_token 已打印到日志和屏幕。"
+            try await applyTokenResponse(
+                tokenResponse,
+                redirectURI: lanRedirectURI
+            )
+            statusMessage = "局域网登录成功"
         } catch {
             statusMessage = "局域网登录失败：\(error.localizedDescription)"
             print("[BangumiLANOAuth] Token exchange failed: \(error)")
@@ -285,16 +293,185 @@ final class BangumiOAuthManager: NSObject, ObservableObject {
         return NSString(string: code) as String
     }
 
-    private func applyTokenResponse(_ tokenResponse: BangumiOAuthTokenResponse) {
+    func consumeAuthenticatedSession() -> BangumiAuthenticatedSession? {
+        defer { authenticatedSession = nil }
+        return authenticatedSession
+    }
+
+    func refreshAccessTokenIfNeeded(
+        in database: DatabaseQueue,
+        refreshWindow: TimeInterval = 3 * 24 * 60 * 60,
+        now: Date = Date()
+    ) async {
+        do {
+            guard let profile = try await AniTVDatabase.currentUserProfile(in: database),
+                  (profile.bgmUserID ?? 0) > 0,
+                  let refreshToken = profile.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !refreshToken.isEmpty else {
+                return
+            }
+
+            guard !(try await AniTVDatabase.isBangumiOAuthRefreshBlocked(in: database)) else {
+                print("[BangumiOAuth] Automatic token refresh is blocked until the user logs in again")
+                return
+            }
+
+            let timeUntilExpiry = profile.expiresAt.timeIntervalSince(now)
+            guard timeUntilExpiry <= refreshWindow else { return }
+
+            let redirectURIs = try await refreshRedirectURICandidates(in: database)
+            print("[BangumiOAuth] Access token expires in \(timeUntilExpiry)s, starting refresh")
+
+            var sawInvalidGrant = false
+            var sawNonInvalidGrantFailure = false
+            var lastError: Error?
+
+            for redirectURI in redirectURIs {
+                do {
+                    let tokenResponse = try await BangumiTokenExchangeService.refreshAccessToken(
+                        refreshToken: refreshToken,
+                        clientID: Self.sharedClientID,
+                        clientSecret: Self.sharedClientSecret,
+                        redirectURI: redirectURI
+                    )
+                    let session = try await Self.makeAuthenticatedSession(
+                        from: tokenResponse,
+                        redirectURI: redirectURI
+                    )
+
+                    _ = try await AniTVDatabase.upsertCurrentUserProfile(
+                        bgmUserID: session.bgmUserID,
+                        username: session.username,
+                        nickname: session.nickname,
+                        avatar: session.avatar,
+                        accessToken: session.accessToken,
+                        refreshToken: session.refreshToken,
+                        tokenType: session.tokenType,
+                        expiresAt: session.expiresAt,
+                        in: database
+                    )
+                    try await AniTVDatabase.setBangumiOAuthRedirectURI(redirectURI, in: database)
+                    try await AniTVDatabase.setBangumiOAuthRefreshBlocked(false, in: database)
+
+                    publish(
+                        session: session,
+                        tokenResponse: tokenResponse,
+                        statusMessage: "Bangumi 会话已自动刷新。",
+                        publishAuthenticatedSession: false
+                    )
+                    print("[BangumiOAuth] Access token refreshed successfully with redirect URI: \(redirectURI)")
+                    return
+                } catch OAuthError.invalidGrant(let response) {
+                    sawInvalidGrant = true
+                    lastError = OAuthError.invalidGrant(response: response)
+                    print("[BangumiOAuth] Refresh attempt returned invalid_grant for redirect URI \(redirectURI): \(response)")
+                } catch {
+                    sawNonInvalidGrantFailure = true
+                    lastError = error
+                    print("[BangumiOAuth] Refresh attempt failed for redirect URI \(redirectURI): \(error)")
+                }
+            }
+
+            if sawInvalidGrant, !sawNonInvalidGrantFailure {
+                try await AniTVDatabase.setBangumiOAuthRefreshBlocked(true, in: database)
+                statusMessage = "Bangumi 授权已失效，请重新登录。"
+                print("[BangumiOAuth] Refresh token is invalid. Automatic refresh is blocked until the user logs in again.")
+                return
+            }
+
+            if let lastError {
+                throw lastError
+            }
+        } catch {
+            print("[BangumiOAuth] Background token refresh failed: \(error)")
+        }
+    }
+
+    private func applyTokenResponse(
+        _ tokenResponse: BangumiOAuthTokenResponse,
+        redirectURI: String
+    ) async throws {
+        let session = try await Self.makeAuthenticatedSession(
+            from: tokenResponse,
+            redirectURI: redirectURI
+        )
+        publish(
+            session: session,
+            tokenResponse: tokenResponse,
+            statusMessage: "Bangumi 登录成功。",
+            publishAuthenticatedSession: true
+        )
+    }
+
+    private func publish(
+        session: BangumiAuthenticatedSession,
+        tokenResponse: BangumiOAuthTokenResponse,
+        statusMessage: String,
+        publishAuthenticatedSession: Bool
+    ) {
         accessToken = tokenResponse.accessToken
         refreshToken = tokenResponse.refreshToken
         rawResponse = tokenResponse.rawResponse
-        statusMessage = "Bangumi 登录成功，access_token 已打印到日志和屏幕。"
+        self.statusMessage = statusMessage
+
+        if publishAuthenticatedSession {
+            authenticatedSession = session
+        }
 
         print("[BangumiOAuth] access_token: \(tokenResponse.accessToken)")
         print("[BangumiOAuth] refresh_token: \(tokenResponse.refreshToken)")
         print("[BangumiOAuth] raw_response: \(tokenResponse.rawResponse)")
+        print("[BangumiOAuth] user_id: \(session.bgmUserID), username: \(session.username), nickname: \(session.nickname)")
     }
+
+    private func refreshRedirectURICandidates(in database: DatabaseQueue) async throws -> [String] {
+        var redirectURIs: [String] = []
+
+        func append(_ value: String?) {
+            guard let normalizedValue = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !normalizedValue.isEmpty,
+                  !redirectURIs.contains(normalizedValue) else {
+                return
+            }
+            redirectURIs.append(normalizedValue)
+        }
+
+        append(try await AniTVDatabase.bangumiOAuthRedirectURI(in: database))
+        append(Self.defaultRedirectURI)
+        append(lanRedirectURI)
+
+        return redirectURIs
+    }
+
+    private static func makeAuthenticatedSession(
+        from tokenResponse: BangumiOAuthTokenResponse,
+        redirectURI: String
+    ) async throws -> BangumiAuthenticatedSession {
+        let user = try await BangumiUserService.fetchCurrentUser(accessToken: tokenResponse.accessToken)
+        return BangumiAuthenticatedSession(
+            bgmUserID: user.id,
+            username: user.username,
+            nickname: user.nickname,
+            avatar: user.avatar.large ?? user.avatar.medium ?? user.avatar.small,
+            accessToken: tokenResponse.accessToken,
+            refreshToken: tokenResponse.refreshToken,
+            tokenType: tokenResponse.tokenType,
+            expiresAt: Date().addingTimeInterval(TimeInterval(tokenResponse.expiresIn)),
+            redirectURI: redirectURI
+        )
+    }
+}
+
+struct BangumiAuthenticatedSession: Equatable {
+    let bgmUserID: Int
+    let username: String
+    let nickname: String
+    let avatar: String?
+    let accessToken: String
+    let refreshToken: String
+    let tokenType: String
+    let expiresAt: Date
+    let redirectURI: String
 }
 
 private struct OAuthStatePayload: Codable {
@@ -318,6 +495,19 @@ private struct BangumiOAuthTokenResponse {
     let rawResponse: String
 }
 
+private struct BangumiCurrentUser: Decodable {
+    let id: Int
+    let username: String
+    let nickname: String
+    let avatar: BangumiCurrentUserAvatar
+}
+
+private struct BangumiCurrentUserAvatar: Decodable {
+    let large: String?
+    let medium: String?
+    let small: String?
+}
+
 private enum BangumiTokenExchangeService {
     static func exchangeCodeForToken(
         code: String,
@@ -330,18 +520,41 @@ private enum BangumiTokenExchangeService {
         let stableClientSecret = NSString(string: clientSecret) as String
         let stableRedirectURI = NSString(string: redirectURI) as String
 
-        var request = URLRequest(url: BangumiAPI.web.build("oauth/access_token"))
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
-
         let bodyString =
             "grant_type=authorization_code" +
             "&client_id=\(formURLEncode(stableClientID))" +
             "&client_secret=\(formURLEncode(stableClientSecret))" +
             "&code=\(formURLEncode(stableCode))" +
             "&redirect_uri=\(formURLEncode(stableRedirectURI))"
+        return try await performTokenRequest(bodyString: bodyString)
+    }
+
+    static func refreshAccessToken(
+        refreshToken: String,
+        clientID: String,
+        clientSecret: String,
+        redirectURI: String
+    ) async throws -> BangumiOAuthTokenResponse {
+        let stableRefreshToken = NSString(string: refreshToken) as String
+        let stableClientID = NSString(string: clientID) as String
+        let stableClientSecret = NSString(string: clientSecret) as String
+        let stableRedirectURI = NSString(string: redirectURI) as String
+
+        let bodyString =
+            "grant_type=refresh_token" +
+            "&client_id=\(formURLEncode(stableClientID))" +
+            "&client_secret=\(formURLEncode(stableClientSecret))" +
+            "&refresh_token=\(formURLEncode(stableRefreshToken))" +
+            "&redirect_uri=\(formURLEncode(stableRedirectURI))"
+        return try await performTokenRequest(bodyString: bodyString)
+    }
+
+    private static func performTokenRequest(bodyString: String) async throws -> BangumiOAuthTokenResponse {
+        var request = URLRequest(url: BangumiAPI.web.build("oauth/access_token"))
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
         request.httpBody = Data(bodyString.utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -351,6 +564,10 @@ private enum BangumiTokenExchangeService {
 
         guard 200..<300 ~= httpResponse.statusCode else {
             let responseText = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+            if let oauthError = try? JSONDecoder().decode(BangumiOAuthErrorResponseWire.self, from: data),
+               oauthError.error == "invalid_grant" {
+                throw OAuthError.invalidGrant(response: responseText)
+            }
             throw OAuthError.tokenExchangeFailed(statusCode: httpResponse.statusCode, response: responseText)
         }
 
@@ -374,6 +591,28 @@ private enum BangumiTokenExchangeService {
     }
 }
 
+private enum BangumiUserService {
+    static func fetchCurrentUser(accessToken: String) async throws -> BangumiCurrentUser {
+        var request = URLRequest(url: BangumiAPI.pub.build("v0/me"))
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(APIConfig.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OAuthError.invalidUserResponse
+        }
+
+        guard 200..<300 ~= httpResponse.statusCode else {
+            let responseText = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+            throw OAuthError.userFetchFailed(statusCode: httpResponse.statusCode, response: responseText)
+        }
+
+        return try JSONDecoder().decode(BangumiCurrentUser.self, from: data)
+    }
+}
+
 private struct BangumiOAuthTokenResponseWire: Decodable {
     let accessToken: String
     let expiresIn: Int
@@ -392,12 +631,19 @@ private struct BangumiOAuthTokenResponseWire: Decodable {
     }
 }
 
+private struct BangumiOAuthErrorResponseWire: Decodable {
+    let error: String
+}
+
 private enum OAuthError: LocalizedError {
     case invalidCallbackURL
     case missingCode
     case stateMismatch
     case invalidTokenResponse
+    case invalidGrant(response: String)
     case tokenExchangeFailed(statusCode: Int, response: String)
+    case invalidUserResponse
+    case userFetchFailed(statusCode: Int, response: String)
 
     var errorDescription: String? {
         switch self {
@@ -409,8 +655,14 @@ private enum OAuthError: LocalizedError {
             return "Bangumi 回调 state 校验失败。"
         case .invalidTokenResponse:
             return "Bangumi token 响应无效。"
+        case .invalidGrant:
+            return "Bangumi 授权已失效，请重新登录。"
         case .tokenExchangeFailed(let statusCode, let response):
             return "Bangumi token 交换失败（HTTP \(statusCode)）：\(response)"
+        case .invalidUserResponse:
+            return "Bangumi 用户信息响应无效。"
+        case .userFetchFailed(let statusCode, let response):
+            return "Bangumi 用户信息获取失败（HTTP \(statusCode)）：\(response)"
         }
     }
 }

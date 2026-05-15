@@ -8,7 +8,7 @@
 import SwiftUI
 import Kingfisher
 
-fileprivate enum HeroActionButtonFocus: Hashable {
+enum HeroActionButtonFocus: Hashable {
     case previousTrigger
     case play
     case favorite
@@ -19,30 +19,15 @@ struct HeroCardView: View {
     let item: AnimeSubject
     
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                KFImage(item.backdrop)
-                    .resizable()
-                    .placeholder {
-                        Color.gray.opacity(0.3)
-                    }
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .ignoresSafeArea()
-                    .clipped()
-
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.black.opacity(0),
-                        Color.black.opacity(0.5),
-                        Color.black.opacity(0.7),
-                        Color.black.opacity(0.9),
-                        Color.black.opacity(1)
-                    ]),
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-            }
+        ZStack {
+            KFImage(item.backdrop)
+                .resizable()
+                .placeholder {
+                    Color.gray.opacity(0.3)
+                }
+                .aspectRatio(contentMode: .fill)
+                .ignoresSafeArea()
+                .clipped()
         }
         .ignoresSafeArea()
     }
@@ -54,6 +39,10 @@ struct ActionButtonsView: View {
     let openAnimeDetail: (Int) -> Void
     let onMoveToPrevious: () -> Void
     let onMoveToNext: () -> Void
+    var defaultFocusScope: Namespace.ID?
+    var preferredFocusTarget: HeroActionButtonFocus = .play
+    var onActionFocused: (HeroActionButtonFocus) -> Void = { _ in }
+    var prefersDefaultFocus = false
     
     var body: some View {
         ZStack(alignment: .leading) {
@@ -62,13 +51,17 @@ struct ActionButtonsView: View {
                     title: "立即播放",
                     systemImage: "play.fill",
                     focusedButton: $focusedButton,
-                    focusTarget: .play
+                    focusTarget: .play,
+                    defaultFocusScope: defaultFocusScope,
+                    prefersDefaultFocus: prefersDefaultFocus && preferredFocusTarget == .play
                 )
 
                 CircleActionButton(
                     systemImage: "plus",
                     focusedButton: $focusedButton,
-                    focusTarget: .favorite
+                    focusTarget: .favorite,
+                    defaultFocusScope: defaultFocusScope,
+                    prefersDefaultFocus: prefersDefaultFocus && preferredFocusTarget == .favorite
                 )
                 
                 CircleNavigationButton(
@@ -76,6 +69,8 @@ struct ActionButtonsView: View {
                     onActivate: { openAnimeDetail(anime.id) },
                     focusedButton: $focusedButton,
                     focusTarget: .info,
+                    defaultFocusScope: defaultFocusScope,
+                    prefersDefaultFocus: prefersDefaultFocus && preferredFocusTarget == .info,
                     onMoveRight: {
                         onMoveToNext()
                         DispatchQueue.main.async {
@@ -93,12 +88,31 @@ struct ActionButtonsView: View {
         }
         .padding()
         .focusSection()
+        .onAppear {
+            restoreDefaultFocusIfNeeded()
+        }
+        .onChange(of: prefersDefaultFocus) { _, shouldPrefer in
+            guard shouldPrefer else { return }
+            restoreDefaultFocusIfNeeded()
+        }
         .onChange(of: focusedButton) { _, newValue in
-            guard newValue == .previousTrigger else { return }
-            onMoveToPrevious()
-            DispatchQueue.main.async {
-                focusedButton = .play
+            guard let newValue else { return }
+
+            if newValue == .previousTrigger {
+                onMoveToPrevious()
+                DispatchQueue.main.async {
+                    focusedButton = .play
+                }
+            } else {
+                onActionFocused(newValue)
             }
+        }
+    }
+
+    private func restoreDefaultFocusIfNeeded() {
+        guard prefersDefaultFocus else { return }
+        DispatchQueue.main.async {
+            focusedButton = preferredFocusTarget
         }
     }
 }
@@ -134,9 +148,11 @@ struct UnifiedActionButton: View {
     let height: CGFloat = 80
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
+    var defaultFocusScope: Namespace.ID?
+    var prefersDefaultFocus = false
 
     var body: some View {
-        Button(action: { print("Action") }) {
+        let button = Button(action: { print("Action") }) {
             HStack {
                 Image(systemName: systemImage)
                 Text(title)
@@ -154,6 +170,12 @@ struct UnifiedActionButton: View {
         .buttonStyle(CleanButtonStyle())   // 🎯 使用自定义样式
         .focused(focusedButton, equals: focusTarget)
         // ❌ 不再需要 .focusEffectDisabled，因为 CleanButtonStyle 已包含
+
+        if let defaultFocusScope {
+            button.prefersDefaultFocus(prefersDefaultFocus, in: defaultFocusScope)
+        } else {
+            button
+        }
     }
     
     private var isFocused: Bool {
@@ -177,9 +199,11 @@ struct CircleActionButton: View {
     let size: CGFloat = 80 // 必须与上面高度一致
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
+    var defaultFocusScope: Namespace.ID?
+    var prefersDefaultFocus = false
 
     var body: some View {
-        Button(action: { print("Action") }) {
+        let button = Button(action: { print("Action") }) {
             Image(systemName: systemImage)
                 .scaleEffect(isFocused ? 1.15 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: isFocused)
@@ -192,6 +216,12 @@ struct CircleActionButton: View {
         }
         .buttonStyle(CleanButtonStyle()) // 核心：干掉系统缩放
         .focused(focusedButton, equals: focusTarget)
+
+        if let defaultFocusScope {
+            button.prefersDefaultFocus(prefersDefaultFocus, in: defaultFocusScope)
+        } else {
+            button
+        }
     }
     
     private var isFocused: Bool {
@@ -204,10 +234,12 @@ struct CircleNavigationButton: View {
     let size: CGFloat = 80
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
+    var defaultFocusScope: Namespace.ID?
+    var prefersDefaultFocus = false
     var onMoveRight: (() -> Void)? = nil
     
     var body: some View {
-        Button(action: onActivate) {
+        let button = Button(action: onActivate) {
             Image(systemName: systemImage)
                 .scaleEffect(isFocused ? 1.15 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: isFocused)
@@ -224,6 +256,12 @@ struct CircleNavigationButton: View {
             if direction == .right {
                 onMoveRight?()
             }
+        }
+
+        if let defaultFocusScope {
+            button.prefersDefaultFocus(prefersDefaultFocus, in: defaultFocusScope)
+        } else {
+            button
         }
     }
     

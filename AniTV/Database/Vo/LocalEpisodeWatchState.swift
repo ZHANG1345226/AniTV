@@ -10,6 +10,8 @@ import SQLiteData
 
 @Table("local_episode_watch_state")
 nonisolated struct LocalEpisodeWatchState: Equatable, Identifiable {
+    static let watchingType = 0
+
     let id: Int
 
     @Column("bgm_user_id")

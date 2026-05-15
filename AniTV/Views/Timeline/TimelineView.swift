@@ -309,7 +309,6 @@ private struct TimelineDayColumnView: View {
                                 focusScope: focusScope,
                                 openAnimeDetail: openAnimeDetail
                             )
-                            .padding(.top, 10)
                             .id(entry.id)
                         }
 
@@ -387,6 +386,7 @@ private struct TimelineEpisodeCard: View {
     let openAnimeDetail: (Int) -> Void
 
     var body: some View {
+        Spacer(minLength: 10)
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
@@ -395,7 +395,6 @@ private struct TimelineEpisodeCard: View {
                         .foregroundStyle(.white)
                         .lineLimit(2)
 
-                    Spacer(minLength: 0)
 
                     Text(displayTime)
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
@@ -404,7 +403,6 @@ private struct TimelineEpisodeCard: View {
                         .padding(.vertical, 6)
                         .background(timeBackground, in: Capsule())
                 }
-//                .offset(y: -2)
 
                 Text(episodeLine)
                     .font(.system(size: 16, weight: .medium))
@@ -439,6 +437,8 @@ private struct TimelineEpisodeCard: View {
             .zIndex(1)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.top, -10)
+//        .offset(y: -10)
     }
 
     private var displayTitle: String {

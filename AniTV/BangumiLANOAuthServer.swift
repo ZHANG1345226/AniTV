@@ -183,8 +183,8 @@ final class BangumiLANOAuthServer: NSObject {
             <body>
             <div class="card">
             <h1>连接 Bangumi 到 AniTV</h1>
-            <p>你正在手机上打开 AniTV 的局域网登录入口。</p>
-            <p>点击下面的按钮后，会跳转到 Bangumi 官方授权页；授权完成后，Bangumi 会直接回调到电视上的 <code>\(config.redirectURI)</code>。</p>
+            <p>点击下面的按钮后，会跳转到 Bangumi 官方授权页；如果授权后电视没有响应，请扫码重试或使用Apple设备登录按钮登录。</p>
+            <p>建议使用原生相机App扫码打开或在默认浏览器中打开</p>
             <a class="button" href="\(authorizationURL.absoluteString)">继续前往 Bangumi 登录</a>
             </div>
             </body>

@@ -22,7 +22,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>BangumiOAuthClientID</key>
+	<string></string>
+	<key>BangumiOAuthClientSecret</key>
+	<string></string>
 	<key>TMDBApiKey</key>
-	<string>6645039be7e0bd88ea32b357612ad4fe</string>
+	<string></string>
 </dict>
 </plist>
