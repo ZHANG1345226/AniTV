@@ -251,21 +251,6 @@ private final class CollectionContentStore: ObservableObject {
 
 struct CollectionView: View {
     let openAnimeDetail: (Int) -> Void
-    let focusRestoreToken: Int
-    @Binding private var lastFocusedPosterID: Int?
-    @Binding private var pendingRestorePosterID: Int?
-
-    init(
-        openAnimeDetail: @escaping (Int) -> Void,
-        focusRestoreToken: Int = 0,
-        lastFocusedPosterID: Binding<Int?> = .constant(nil),
-        pendingRestorePosterID: Binding<Int?> = .constant(nil)
-    ) {
-        self.openAnimeDetail = openAnimeDetail
-        self.focusRestoreToken = focusRestoreToken
-        _lastFocusedPosterID = lastFocusedPosterID
-        _pendingRestorePosterID = pendingRestorePosterID
-    }
 
     @Dependency(\.defaultDatabase) private var database
     @StateObject private var store = CollectionContentStore()
@@ -277,9 +262,6 @@ struct CollectionView: View {
                     tab: tab,
                     store: store,
                     database: database,
-                    focusRestoreToken: focusRestoreToken,
-                    lastFocusedPosterID: $lastFocusedPosterID,
-                    pendingRestorePosterID: $pendingRestorePosterID,
                     openAnimeDetail: openAnimeDetail
                 )
                 .tag(tab)
@@ -296,13 +278,7 @@ private struct CollectionTabPageView: View {
     let tab: CollectionTab
     @ObservedObject var store: CollectionContentStore
     let database: any DatabaseWriter
-    let focusRestoreToken: Int
-    @Binding var lastFocusedPosterID: Int?
-    @Binding var pendingRestorePosterID: Int?
     let openAnimeDetail: (Int) -> Void
-    @Environment(\.resetFocus) private var resetFocus
-    @FocusState private var focusedPosterID: Int?
-    @Namespace private var posterFocusScope
 
     private let columns = [
         GridItem(.fixed(258), spacing: 36),
@@ -314,136 +290,69 @@ private struct CollectionTabPageView: View {
     ]
 
     var body: some View {
-        ScrollViewReader { scrollProxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 24) {
-                    Text("收藏")
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 80)
-                        .padding(.top, 52)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("收藏")
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 80)
+                    .padding(.top, 52)
 
-                    if store.isLoadingInitial(for: tab) && store.items(for: tab).isEmpty {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 36) {
-                            ForEach(0..<8, id: \.self) { _ in
-                                CollectionPosterSkeletonCard()
-                            }
+                if store.isLoadingInitial(for: tab) && store.items(for: tab).isEmpty {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 36) {
+                        ForEach(0..<8, id: \.self) { _ in
+                            CollectionPosterSkeletonCard()
                         }
-                        .padding(.horizontal, 80)
-                    } else if store.items(for: tab).isEmpty {
-                        ContentUnavailableView(
-                            tab.title,
-                            systemImage: tab.systemImage,
-                            description: Text(tab.emptyDescription)
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 120)
-                    } else {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 36) {
-                            ForEach(store.items(for: tab)) { item in
-                                CollectionPosterCard(
-                                    item: item,
-                                    focusedPosterID: $focusedPosterID,
-                                    focusScope: posterFocusScope,
-                                    shouldPreferFocus: pendingRestorePosterID == item.id,
-                                    onFocused: rememberFocusedPoster
-                                ) {
-                                    openAnimeDetail(item.id)
-                                }
-                                .id(item.id)
-                                .onAppear {
-                                    Task {
-                                        await store.loadMoreIfNeeded(
-                                            for: tab,
-                                            currentItem: item,
-                                            database: database
-                                        )
-                                    }
-                                }
-                            }
-
-                            if store.isLoadingMore(for: tab) {
-                                CollectionPosterSkeletonCard()
-                            }
-                        }
-                        .padding(.horizontal, 80)
                     }
+                    .padding(.horizontal, 80)
+                } else if store.items(for: tab).isEmpty {
+                    ContentUnavailableView(
+                        tab.title,
+                        systemImage: tab.systemImage,
+                        description: Text(tab.emptyDescription)
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 120)
+                } else {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 36) {
+                        ForEach(store.items(for: tab)) { item in
+                            CollectionPosterCard(item: item) {
+                                openAnimeDetail(item.id)
+                            }
+                            .id(item.id)
+                            .onAppear {
+                                Task {
+                                    await store.loadMoreIfNeeded(
+                                        for: tab,
+                                        currentItem: item,
+                                        database: database
+                                    )
+                                }
+                            }
+                        }
+
+                        if store.isLoadingMore(for: tab) {
+                            CollectionPosterSkeletonCard()
+                        }
+                    }
+                    .padding(.horizontal, 80)
                 }
-                .padding(.bottom, 80)
             }
-            .background(Color.black.ignoresSafeArea())
-            .focusScope(posterFocusScope)
-            .task {
-                await store.loadIfNeeded(for: tab, database: database)
-            }
-            .onChange(of: pendingRestorePosterID) { _, newValue in
-                guard let newValue, store.selectedTab == tab else { return }
-                Task { @MainActor in
-                    await restorePendingPosterFocus(newValue, using: scrollProxy)
-                }
-            }
-            .onChange(of: focusRestoreToken) { _, _ in
-                guard let posterID = pendingRestorePosterID, store.selectedTab == tab else { return }
-                Task { @MainActor in
-                    await restorePendingPosterFocus(posterID, using: scrollProxy)
-                }
-            }
+            .padding(.bottom, 80)
         }
-    }
-
-    private func rememberFocusedPoster(_ posterID: Int) {
-        guard store.selectedTab == tab else { return }
-        if pendingRestorePosterID == posterID {
-            lastFocusedPosterID = posterID
-            pendingRestorePosterID = nil
-            return
-        }
-
-        guard pendingRestorePosterID == nil else { return }
-        lastFocusedPosterID = posterID
-    }
-
-    private func restorePendingPosterFocus(_ posterID: Int, using proxy: ScrollViewProxy) async {
-        focusedPosterID = nil
-        await Task.yield()
-        guard pendingRestorePosterID == posterID, store.selectedTab == tab else { return }
-
-        scrollToPoster(posterID, using: proxy)
-        try? await Task.sleep(for: .milliseconds(300))
-        guard pendingRestorePosterID == posterID, store.selectedTab == tab else { return }
-
-        focusedPosterID = posterID
-        await Task.yield()
-        guard pendingRestorePosterID == posterID, store.selectedTab == tab else { return }
-
-        resetFocus(in: posterFocusScope)
-        lastFocusedPosterID = posterID
-    }
-
-    private func scrollToPoster(_ posterID: Int, using proxy: ScrollViewProxy) {
-        var transaction = Transaction()
-        transaction.animation = nil
-
-        withTransaction(transaction) {
-            proxy.scrollTo(posterID, anchor: .center)
+        .background(Color.black.ignoresSafeArea())
+        .task {
+            await store.loadIfNeeded(for: tab, database: database)
         }
     }
 }
 
 private struct CollectionPosterCard: View {
     let item: HomePosterItem
-    let focusedPosterID: FocusState<Int?>.Binding
-    let focusScope: Namespace.ID
-    let shouldPreferFocus: Bool
-    let onFocused: (Int) -> Void
     let action: () -> Void
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        Button(action: {
-            onFocused(item.id)
-            action()
-        }) {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 KFImage(item.posterURL)
                     .resizable()
@@ -481,13 +390,7 @@ private struct CollectionPosterCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.card)
-        .focused(focusedPosterID, equals: item.id)
-        .prefersDefaultFocus(shouldPreferFocus, in: focusScope)
         .frame(width: 258)
-        .onChange(of: isFocused) { _, newValue in
-            guard newValue else { return }
-            onFocused(item.id)
-        }
     }
 }
 

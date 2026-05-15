@@ -18,27 +18,14 @@ enum NavigationCategory: String, Hashable {
 }
 
 struct SidebarContentView: View {
-    @Environment(\.resetFocus) private var resetFocus
     @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
     @State private var selectedCategory: NavigationCategory? = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var presentedAnimeDetailID: Int?
     @State private var showingProfileSelection = false
     @State private var currentProfile: UserProfile?
-    @State private var homeFocusRestoreToken = 0
     @State private var homeContinueWatchingRefreshToken = 0
-    @State private var homeLastFocusedPosterID: Int?
-    @State private var homePendingRestorePosterID: Int?
-    @State private var collectionFocusRestoreToken = 0
-    @State private var collectionLastFocusedPosterID: Int?
-    @State private var collectionPendingRestorePosterID: Int?
-    @State private var timelineFocusRestoreToken = 0
-    @State private var timelineLastFocusedEntryID: String?
-    @State private var timelinePendingRestoreEntryID: String?
     @Dependency(\.defaultDatabase) private var database
-    @FocusState private var focusedCategory: NavigationCategory?
-    @FocusState private var isProfileButtonFocused: Bool
-    @Namespace private var sidebarFocusScope
 
     private var currentUserName: String {
         currentProfile?.effectiveNickname ?? "Guest"
@@ -47,10 +34,6 @@ struct SidebarContentView: View {
     private var currentUserAvatarURL: URL? {
         guard let avatar = currentProfile?.effectiveAvatar else { return nil }
         return URL(string: avatar)
-    }
-
-    private var shouldPreferSidebarFocus: Bool {
-        columnVisibility != .detailOnly && presentedAnimeDetailID == nil
     }
 
     var body: some View {
@@ -65,87 +48,52 @@ struct SidebarContentView: View {
                                 SidebarUserAvatarView(url: currentUserAvatarURL)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    ZStack(alignment: .leading) {
-                                        Text(currentUserName)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.white.opacity(0.9))
-                                            .opacity(isProfileButtonFocused ? 0 : 1)
+                                    Text(currentUserName)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                                        Text(currentUserName)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.white)
-                                            .opacity(isProfileButtonFocused ? 1 : 0)
-                                    }
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                                    if isProfileButtonFocused {
-                                        Text("切换账户")
-                                            .font(.caption)
-                                            .foregroundStyle(.white.opacity(0.72))
-                                            .transition(
-                                                .opacity.combined(with: .move(edge: .top))
-                                            )
-                                    }
+                                    Text("切换账户")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.72))
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             }
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .padding(.vertical, 6)
-                            .animation(.easeInOut(duration: 0.22), value: isProfileButtonFocused)
                         }
                         .buttonStyle(.plain)
-                        .focused($isProfileButtonFocused)
                     }
 
                     Section {
                         NavigationLink(value: NavigationCategory.search) {
                             Label("搜索", systemImage: "magnifyingglass")
                         }
-                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .search, in: sidebarFocusScope)
-                        .focused($focusedCategory, equals: .search)
 
                         NavigationLink(value: NavigationCategory.home) {
                             Label("首页", systemImage: "house")
                         }
-                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .home, in: sidebarFocusScope)
-                        .focused($focusedCategory, equals: .home)
 
                         NavigationLink(value: NavigationCategory.animeList) {
                             Label("收藏", systemImage: "play.tv")
                         }
-                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .animeList, in: sidebarFocusScope)
-                        .focused($focusedCategory, equals: .animeList)
 
                         NavigationLink(value: NavigationCategory.timeline) {
                             Label("时间线", systemImage: "calendar")
                         }
-                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .timeline, in: sidebarFocusScope)
-                        .focused($focusedCategory, equals: .timeline)
 
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
-                        .prefersDefaultFocus(shouldPreferSidebarFocus && selectedCategory == .settings, in: sidebarFocusScope)
-                        .focused($focusedCategory, equals: .settings)
                     }.padding(.top, 60)
                 }
-                .focusScope(sidebarFocusScope)
             } detail: {
                 SidebarDetailView(
                     selectedCategory: $selectedCategory,
                     columnVisibility: $columnVisibility,
-                    homeFocusRestoreToken: homeFocusRestoreToken,
                     homeContinueWatchingRefreshToken: homeContinueWatchingRefreshToken,
-                    homeLastFocusedPosterID: $homeLastFocusedPosterID,
-                    homePendingRestorePosterID: $homePendingRestorePosterID,
-                    collectionFocusRestoreToken: collectionFocusRestoreToken,
-                    collectionLastFocusedPosterID: $collectionLastFocusedPosterID,
-                    collectionPendingRestorePosterID: $collectionPendingRestorePosterID,
-                    timelineFocusRestoreToken: timelineFocusRestoreToken,
-                    timelineLastFocusedEntryID: $timelineLastFocusedEntryID,
-                    timelinePendingRestoreEntryID: $timelinePendingRestoreEntryID,
                     openAnimeDetail: openAnimeDetail
                 )
             }
@@ -155,20 +103,7 @@ struct SidebarContentView: View {
                 AnimeDetailScreen(
                     bgmId: bgmId,
                     onClose: {
-                        let categoryToRestore = selectedCategory ?? .home
-                        let homeRestoreID = homeLastFocusedPosterID
-                        let collectionRestoreID = collectionLastFocusedPosterID
-                        let shouldRefreshHomeContinueWatching = categoryToRestore == .home
-                        let shouldRestoreTimelineFocus = selectedCategory == .timeline
-                        let restoreEntryID = timelineLastFocusedEntryID
-                        switch categoryToRestore {
-                        case .home:
-                            prepareHomeFocusRestore(homeRestoreID)
-                        case .animeList:
-                            prepareCollectionFocusRestore(collectionRestoreID)
-                        default:
-                            break
-                        }
+                        let shouldRefreshHomeContinueWatching = (selectedCategory ?? .home) == .home
 
                         var transaction = Transaction()
                         transaction.disablesAnimations = true
@@ -180,15 +115,6 @@ struct SidebarContentView: View {
                         if shouldRefreshHomeContinueWatching {
                             homeContinueWatchingRefreshToken += 1
                         }
-
-                        if shouldRestoreTimelineFocus {
-                            Task { @MainActor in
-                                timelinePendingRestoreEntryID = restoreEntryID
-                                await Task.yield()
-                                try? await Task.sleep(for: .milliseconds(250))
-                                timelineFocusRestoreToken += 1
-                            }
-                        }
                     }
                 )
             }
@@ -198,7 +124,6 @@ struct SidebarContentView: View {
         }
         .onAppear {
             selectedCategory = NavigationCategory(rawValue: selectedCategoryRawValue) ?? .home
-            requestSidebarFocus()
         }
         .task {
             await loadCurrentProfile()
@@ -206,22 +131,12 @@ struct SidebarContentView: View {
         .onChange(of: selectedCategory) { _, newValue in
             selectedCategoryRawValue = newValue?.rawValue ?? NavigationCategory.home.rawValue
         }
-        .onChange(of: columnVisibility) { oldValue, newValue in
-            if oldValue == .detailOnly, newValue != .detailOnly {
-                requestSidebarFocus()
-            } else if oldValue != .detailOnly, newValue == .detailOnly {
-                prepareCurrentDetailFocusRestore()
-            }
-        }
     }
 
     private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
             get: { columnVisibility },
             set: { newValue in
-                if columnVisibility != .detailOnly, newValue == .detailOnly {
-                    prepareCurrentDetailFocusRestore()
-                }
                 columnVisibility = newValue
             }
         )
@@ -229,61 +144,6 @@ struct SidebarContentView: View {
 
     private func openAnimeDetail(_ bgmId: Int) {
         presentedAnimeDetailID = bgmId
-    }
-
-    private func requestSidebarFocus() {
-        Task { @MainActor in
-            focusedCategory = nil
-            isProfileButtonFocused = false
-            await Task.yield()
-            guard columnVisibility != .detailOnly, presentedAnimeDetailID == nil else { return }
-            focusedCategory = selectedCategory ?? .home
-            resetFocus(in: sidebarFocusScope)
-        }
-    }
-
-    private func prepareCurrentDetailFocusRestore() {
-        focusedCategory = nil
-        isProfileButtonFocused = false
-
-        switch selectedCategory ?? .home {
-        case .home:
-            prepareHomeFocusRestore(homeLastFocusedPosterID)
-        case .animeList:
-            prepareCollectionFocusRestore(collectionLastFocusedPosterID)
-        default:
-            break
-        }
-    }
-
-    private func prepareHomeFocusRestore(_ posterID: Int?) {
-        if let posterID {
-            homePendingRestorePosterID = posterID
-        }
-        homeFocusRestoreToken += 1
-
-        guard let posterID else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1200))
-            if homePendingRestorePosterID == posterID {
-                homePendingRestorePosterID = nil
-            }
-        }
-    }
-
-    private func prepareCollectionFocusRestore(_ posterID: Int?) {
-        if let posterID {
-            collectionPendingRestorePosterID = posterID
-        }
-        collectionFocusRestoreToken += 1
-
-        guard let posterID else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1200))
-            if collectionPendingRestorePosterID == posterID {
-                collectionPendingRestorePosterID = nil
-            }
-        }
     }
 
     private func loadCurrentProfile() async {
@@ -377,7 +237,6 @@ private struct AnimeEpisodePlayerScreen: View {
 }
 
 private struct AnimeDetailScreen: View {
-    @Environment(\.resetFocus) private var resetFocus
     let bgmId: Int
     let onClose: () -> Void
     @State private var navigationPath: [AnimeDetailRoute] = []
@@ -419,9 +278,6 @@ private struct AnimeDetailScreen: View {
                 }
             }
         }
-        .onAppear {
-            resetFocus(in: detailFocusScope)
-        }
         .onExitCommand {
             if navigationPath.isEmpty {
                 onClose()
@@ -435,16 +291,7 @@ private struct AnimeDetailScreen: View {
 private struct SidebarDetailView: View {
     @Binding var selectedCategory: NavigationCategory?
     @Binding var columnVisibility: NavigationSplitViewVisibility
-    let homeFocusRestoreToken: Int
     let homeContinueWatchingRefreshToken: Int
-    @Binding var homeLastFocusedPosterID: Int?
-    @Binding var homePendingRestorePosterID: Int?
-    let collectionFocusRestoreToken: Int
-    @Binding var collectionLastFocusedPosterID: Int?
-    @Binding var collectionPendingRestorePosterID: Int?
-    let timelineFocusRestoreToken: Int
-    @Binding var timelineLastFocusedEntryID: String?
-    @Binding var timelinePendingRestoreEntryID: String?
     let openAnimeDetail: (Int) -> Void
 
     var body: some View {
@@ -458,23 +305,14 @@ private struct SidebarDetailView: View {
             case .home:
                 HomeView(
                     openAnimeDetail: openAnimeDetail,
-                    focusRestoreToken: homeFocusRestoreToken,
-                    continueWatchingRefreshToken: homeContinueWatchingRefreshToken,
-                    lastFocusedPosterID: $homeLastFocusedPosterID,
-                    pendingRestorePosterID: $homePendingRestorePosterID
+                    continueWatchingRefreshToken: homeContinueWatchingRefreshToken
                 )
             case .animeList:
                 CollectionView(
-                    openAnimeDetail: openAnimeDetail,
-                    focusRestoreToken: collectionFocusRestoreToken,
-                    lastFocusedPosterID: $collectionLastFocusedPosterID,
-                    pendingRestorePosterID: $collectionPendingRestorePosterID
+                    openAnimeDetail: openAnimeDetail
                 )
             case .timeline:
                 TimelineView(
-                    focusRestoreToken: timelineFocusRestoreToken,
-                    lastFocusedEntryID: $timelineLastFocusedEntryID,
-                    pendingRestoreEntryID: $timelinePendingRestoreEntryID,
                     openAnimeDetail: openAnimeDetail
                 )
             case .settings:

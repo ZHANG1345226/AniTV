@@ -246,10 +246,7 @@ final class HomeContentStore: ObservableObject {
 
 struct HomeView: View {
     let openAnimeDetail: (Int) -> Void
-    let focusRestoreToken: Int
     let continueWatchingRefreshToken: Int
-    @Binding private var lastFocusedPosterID: Int?
-    @Binding private var pendingRestorePosterID: Int?
 
     private enum ScrollTarget {
         case heroTop
@@ -257,16 +254,10 @@ struct HomeView: View {
 
     init(
         openAnimeDetail: @escaping (Int) -> Void,
-        focusRestoreToken: Int = 0,
-        continueWatchingRefreshToken: Int = 0,
-        lastFocusedPosterID: Binding<Int?> = .constant(nil),
-        pendingRestorePosterID: Binding<Int?> = .constant(nil)
+        continueWatchingRefreshToken: Int = 0
     ) {
         self.openAnimeDetail = openAnimeDetail
-        self.focusRestoreToken = focusRestoreToken
         self.continueWatchingRefreshToken = continueWatchingRefreshToken
-        _lastFocusedPosterID = lastFocusedPosterID
-        _pendingRestorePosterID = pendingRestorePosterID
     }
 
     @Environment(\.resetFocus) private var resetFocus
@@ -279,9 +270,7 @@ struct HomeView: View {
     @State private var shouldPreferHeroDefaultFocus = false
     @State private var heroDefaultFocusTask: Task<Void, Never>?
     @State private var preferredHeroFocusTarget: HeroActionButtonFocus = .play
-    @FocusState private var focusedPosterID: Int?
     @Namespace private var heroFocusScope
-    @Namespace private var posterFocusScope
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -364,10 +353,6 @@ struct HomeView: View {
                                     isLoading: store.isLoadingContinueWatching,
                                     availableWidth: proxy.size.width,
                                     openAnimeDetail: openAnimeDetail,
-                                    focusedPosterID: $focusedPosterID,
-                                    focusScope: posterFocusScope,
-                                    pendingRestorePosterID: pendingRestorePosterID,
-                                    onPosterFocused: rememberFocusedPoster,
                                     onItemAppear: { item in
                                         Task {
                                             await store.loadMoreContinueWatchingIfNeeded(
@@ -387,10 +372,6 @@ struct HomeView: View {
                                 isLoading: store.isLoadingTrending,
                                 availableWidth: proxy.size.width,
                                 openAnimeDetail: openAnimeDetail,
-                                focusedPosterID: $focusedPosterID,
-                                focusScope: posterFocusScope,
-                                pendingRestorePosterID: pendingRestorePosterID,
-                                onPosterFocused: rememberFocusedPoster,
                                 onItemAppear: { item in
                                     Task {
                                         await store.loadMoreTrendingIfNeeded(currentItem: item)
@@ -404,7 +385,6 @@ struct HomeView: View {
                         .padding(.bottom, 80)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .focusScope(posterFocusScope)
                     .onScrollGeometryChange(for: CGFloat.self) { geometry in
                         // Use the raw vertical content offset so the hero starts fully visible
                         // even when SwiftUI restores scroll insets during app relaunch.
@@ -436,17 +416,6 @@ struct HomeView: View {
                     .onChange(of: store.isLoadingTrending) { _, isLoading in
                         guard !isLoading else { return }
                         resetInitialScrollPosition(using: scrollProxy, force: true)
-                    }
-                    .onChange(of: pendingRestorePosterID) { _, newValue in
-                        guard let newValue else { return }
-                        Task { @MainActor in
-                            await restorePendingPosterFocus(newValue, using: scrollProxy)
-                        }
-                    }
-                    .onChange(of: focusRestoreToken) { _, _ in
-                        Task { @MainActor in
-                            await restoreHomeFocus(using: scrollProxy)
-                        }
                     }
                 }
             }
@@ -487,7 +456,6 @@ struct HomeView: View {
     }
 
     private func resetInitialScrollPosition(using proxy: ScrollViewProxy, force: Bool = false) {
-        guard pendingRestorePosterID == nil else { return }
         guard force || !didResetInitialScroll else { return }
         didResetInitialScroll = true
         scrollOffset = 0
@@ -502,7 +470,6 @@ struct HomeView: View {
     }
 
     private func jumpToHeroTop(using proxy: ScrollViewProxy) {
-        guard pendingRestorePosterID == nil else { return }
         var transaction = Transaction()
         transaction.animation = nil
 
@@ -514,10 +481,8 @@ struct HomeView: View {
     }
 
     private func resetHeroFocus() {
-        guard pendingRestorePosterID == nil else { return }
         heroDefaultFocusTask?.cancel()
         heroDefaultFocusTask = Task { @MainActor in
-            focusedPosterID = nil
             shouldPreferHeroDefaultFocus = true
             await Task.yield()
             guard !Task.isCancelled else { return }
@@ -530,57 +495,7 @@ struct HomeView: View {
     }
 
     private func rememberHeroActionFocused(_ target: HeroActionButtonFocus) {
-        guard pendingRestorePosterID == nil else { return }
         preferredHeroFocusTarget = target
-        lastFocusedPosterID = nil
-    }
-
-    private func rememberFocusedPoster(_ posterID: Int) {
-        if pendingRestorePosterID == posterID {
-            lastFocusedPosterID = posterID
-            pendingRestorePosterID = nil
-            return
-        }
-
-        guard pendingRestorePosterID == nil else { return }
-        lastFocusedPosterID = posterID
-    }
-
-    private func restoreHomeFocus(using proxy: ScrollViewProxy) async {
-        await Task.yield()
-        if let posterID = pendingRestorePosterID {
-            await restorePendingPosterFocus(posterID, using: proxy)
-        } else {
-            jumpToHeroTop(using: proxy)
-        }
-    }
-
-    private func restorePendingPosterFocus(_ posterID: Int, using proxy: ScrollViewProxy) async {
-        heroDefaultFocusTask?.cancel()
-        shouldPreferHeroDefaultFocus = false
-        focusedPosterID = nil
-        await Task.yield()
-        guard pendingRestorePosterID == posterID else { return }
-
-        scrollToPoster(posterID, using: proxy)
-        try? await Task.sleep(for: .milliseconds(300))
-        guard pendingRestorePosterID == posterID else { return }
-
-        focusedPosterID = posterID
-        await Task.yield()
-        guard pendingRestorePosterID == posterID else { return }
-
-        resetFocus(in: posterFocusScope)
-        lastFocusedPosterID = posterID
-    }
-
-    private func scrollToPoster(_ posterID: Int, using proxy: ScrollViewProxy) {
-        var transaction = Transaction()
-        transaction.animation = nil
-
-        withTransaction(transaction) {
-            proxy.scrollTo(posterID, anchor: .center)
-        }
     }
 }
 
@@ -665,10 +580,6 @@ private struct HomePosterShelfView: View {
     let isLoading: Bool
     let availableWidth: CGFloat
     let openAnimeDetail: (Int) -> Void
-    let focusedPosterID: FocusState<Int?>.Binding
-    let focusScope: Namespace.ID
-    let pendingRestorePosterID: Int?
-    let onPosterFocused: (Int) -> Void
     var onItemAppear: ((HomePosterItem) -> Void)?
     var showsLoadingTail = false
 
@@ -680,10 +591,6 @@ private struct HomePosterShelfView: View {
                 isLoading: isLoading,
                 availableWidth: availableWidth,
                 openAnimeDetail: openAnimeDetail,
-                focusedPosterID: focusedPosterID,
-                focusScope: focusScope,
-                pendingRestorePosterID: pendingRestorePosterID,
-                onPosterFocused: onPosterFocused,
                 onItemAppear: onItemAppear,
                 showsLoadingTail: showsLoadingTail
             )
@@ -703,13 +610,7 @@ private struct HomePosterShelfView: View {
                             }
                         } else {
                             ForEach(items) { item in
-                                HomePosterCard(
-                                    item: item,
-                                    focusedPosterID: focusedPosterID,
-                                    focusScope: focusScope,
-                                    shouldPreferFocus: pendingRestorePosterID == item.id,
-                                    onFocused: onPosterFocused
-                                ) {
+                                HomePosterCard(item: item) {
                                     openAnimeDetail(item.id)
                                 }
                                 .id(item.id)
@@ -742,10 +643,6 @@ private struct HomePosterGridSection: View {
     let isLoading: Bool
     let availableWidth: CGFloat
     let openAnimeDetail: (Int) -> Void
-    let focusedPosterID: FocusState<Int?>.Binding
-    let focusScope: Namespace.ID
-    let pendingRestorePosterID: Int?
-    let onPosterFocused: (Int) -> Void
     var onItemAppear: ((HomePosterItem) -> Void)?
     var showsLoadingTail = false
 
@@ -801,13 +698,7 @@ private struct HomePosterGridSection: View {
             }
         } else if items.indices.contains(index) {
             let item = items[index]
-            HomePosterCard(
-                item: item,
-                focusedPosterID: focusedPosterID,
-                focusScope: focusScope,
-                shouldPreferFocus: pendingRestorePosterID == item.id,
-                onFocused: onPosterFocused
-            ) {
+            HomePosterCard(item: item) {
                 openAnimeDetail(item.id)
             }
             .id(item.id)
@@ -841,18 +732,10 @@ private struct HomePosterGridSection: View {
 
 private struct HomePosterCard: View {
     let item: HomePosterItem
-    let focusedPosterID: FocusState<Int?>.Binding
-    let focusScope: Namespace.ID
-    let shouldPreferFocus: Bool
-    let onFocused: (Int) -> Void
     let action: () -> Void
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        Button(action: {
-            onFocused(item.id)
-            action()
-        }) {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 KFImage(item.posterURL)
                     .resizable()
@@ -890,13 +773,7 @@ private struct HomePosterCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.card)
-        .focused(focusedPosterID, equals: item.id)
-        .prefersDefaultFocus(shouldPreferFocus, in: focusScope)
         .frame(width: 258)
-        .onChange(of: isFocused) { _, newValue in
-            guard newValue else { return }
-            onFocused(item.id)
-        }
     }
 }
 

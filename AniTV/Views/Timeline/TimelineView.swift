@@ -46,9 +46,6 @@ final class TimelineStore: ObservableObject {
 }
 
 struct TimelineView: View {
-    let focusRestoreToken: Int
-    @Binding var lastFocusedEntryID: String?
-    @Binding var pendingRestoreEntryID: String?
     let openAnimeDetail: (Int) -> Void
 
     @StateObject private var store = TimelineStore()
@@ -74,9 +71,6 @@ struct TimelineView: View {
                 TimelineBoardView(
                     orderedDays: store.orderedDays,
                     timeline: store.timeline,
-                    focusRestoreToken: focusRestoreToken,
-                    lastFocusedEntryID: $lastFocusedEntryID,
-                    pendingRestoreEntryID: $pendingRestoreEntryID,
                     openAnimeDetail: openAnimeDetail
                 )
             }
@@ -115,9 +109,6 @@ private enum TimelinePosterCache {
 private struct TimelineBoardView: View {
     let orderedDays: [String]
     let timeline: TimelineDayMap
-    let focusRestoreToken: Int
-    let lastFocusedEntryID: Binding<String?>
-    let pendingRestoreEntryID: Binding<String?>
     let openAnimeDetail: (Int) -> Void
 
     @Namespace private var timelineFocusScope
@@ -160,15 +151,6 @@ private struct TimelineBoardView: View {
                 .onReceive(currentTimeTicker) { value in
                     currentTime = value
                 }
-                .onChange(of: focusedEntryID) { _, newValue in
-                    guard let newValue else { return }
-                    lastFocusedEntryID.wrappedValue = newValue
-                }
-                .onChange(of: focusRestoreToken) { _, _ in
-                    Task { @MainActor in
-                        await restoreFocusedEntry(using: scrollProxy)
-                    }
-                }
             }
         }
     }
@@ -192,57 +174,6 @@ private struct TimelineBoardView: View {
         focusedEntryID = nil
         await Task.yield()
         focusedEntryID = targetEntryID
-        lastFocusedEntryID.wrappedValue = targetEntryID
-    }
-
-    private func restoreFocusedEntry(using scrollProxy: ScrollViewProxy) async {
-        await Task.yield()
-        if let rememberedEntryID = pendingRestoreEntryID.wrappedValue,
-           let dayKey = orderedDays.first(where: { day in
-               timeline[day, default: []].contains(where: { $0.id == rememberedEntryID })
-           }) {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                scrollProxy.scrollTo(dayKey, anchor: .center)
-            }
-            try? await Task.sleep(for: .milliseconds(250))
-            focusedEntryID = nil
-            await Task.yield()
-            focusedEntryID = rememberedEntryID
-            lastFocusedEntryID.wrappedValue = rememberedEntryID
-            pendingRestoreEntryID.wrappedValue = nil
-            return
-        }
-
-        if let rememberedEntryID = lastFocusedEntryID.wrappedValue,
-           let dayKey = orderedDays.first(where: { day in
-               timeline[day, default: []].contains(where: { $0.id == rememberedEntryID })
-           }) {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                scrollProxy.scrollTo(dayKey, anchor: .center)
-            }
-            try? await Task.sleep(for: .milliseconds(250))
-            focusedEntryID = nil
-            await Task.yield()
-            focusedEntryID = rememberedEntryID
-            lastFocusedEntryID.wrappedValue = rememberedEntryID
-            return
-        }
-        if let focusedEntryID,
-           let dayKey = orderedDays.first(where: { day in
-               timeline[day, default: []].contains(where: { $0.id == focusedEntryID })
-        }) {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                scrollProxy.scrollTo(dayKey, anchor: .center)
-            }
-            try? await Task.sleep(for: .milliseconds(250))
-            self.focusedEntryID = nil
-            await Task.yield()
-            self.focusedEntryID = focusedEntryID
-            lastFocusedEntryID.wrappedValue = focusedEntryID
-            return
-        }
-
-        await focusInitialEntry(using: scrollProxy)
     }
 
     private func preferredEntryID(for dayKey: String) -> String? {
@@ -648,8 +579,6 @@ private enum TimelineBoardFormatter {
 }
 
 #Preview("Timeline Board") {
-    @Previewable @State var lastFocusedEntryID: String?
-    @Previewable @State var pendingRestoreEntryID: String?
     let calendar = TimelineBoardFormatter.calendar
     let now = Date()
     let todayKey = TimelineBoardFormatter.key(for: now)
@@ -740,9 +669,6 @@ private enum TimelineBoardFormatter {
     TimelineBoardView(
         orderedDays: [yesterdayKey, todayKey, tomorrowKey],
         timeline: sampleTimeline,
-        focusRestoreToken: 0,
-        lastFocusedEntryID: $lastFocusedEntryID,
-        pendingRestoreEntryID: $pendingRestoreEntryID,
         openAnimeDetail: { _ in }
     )
 }
