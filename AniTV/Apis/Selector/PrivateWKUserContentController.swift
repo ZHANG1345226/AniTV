@@ -36,6 +36,7 @@ final class TVOSMediaResolver: NSObject {
     
     private var webView: AnyObject?
     private var InterceptContentController: AnyObject?
+    private var drainingWebViews: [ObjectIdentifier: AnyObject] = [:]
     
     // 状态管理
     private var activeContinuation: CheckedContinuation<ExtractionResult, Error>?
@@ -216,32 +217,43 @@ final class TVOSMediaResolver: NSObject {
     @MainActor
     private func teardownWebView() {
         guard let webView else { return }
+        let retiringWebView = webView
+        self.webView = nil
 
-        _ = webView.perform(Selector(("stopLoading")))
-        _ = webView.perform(Selector(("loadHTMLString:baseURL:")), with: "", with: nil)
-        _ = webView.perform(Selector(("setNavigationDelegate:")), with: nil)
+        _ = retiringWebView.perform(Selector(("stopLoading")))
+        _ = retiringWebView.perform(Selector(("setNavigationDelegate:")), with: nil)
 
-        if let config = webView.value(forKey: "configuration") as? NSObject,
+        if let config = retiringWebView.value(forKey: "configuration") as? NSObject,
            let contentController = config.value(forKey: "userContentController") as? NSObject {
             let removeHandlerSelector = Selector(("removeScriptMessageHandlerForName:"))
             if contentController.responds(to: removeHandlerSelector) {
                 _ = contentController.perform(removeHandlerSelector, with: "AniTVIntercept")
             }
+
+            let removeAllUserScriptsSelector = Selector(("removeAllUserScripts"))
+            if contentController.responds(to: removeAllUserScriptsSelector) {
+                _ = contentController.perform(removeAllUserScriptsSelector)
+            }
         }
 
-        if let view = webView as? UIView {
+        if let view = retiringWebView as? UIView {
             view.removeFromSuperview()
         }
 
-        let closeSelector = Selector(("close"))
-        let privateCloseSelector = Selector(("_close"))
-        if webView.responds(to: closeSelector) {
-            _ = webView.perform(closeSelector)
-        } else if webView.responds(to: privateCloseSelector) {
-            _ = webView.perform(privateCloseSelector)
+        // Let WebKit finish invalidating its internal background assertion before
+        // releasing the last strong reference, otherwise tvOS can abort in
+        // RBSAssertion dealloc.
+        let drainKey = ObjectIdentifier(retiringWebView)
+        drainingWebViews[drainKey] = retiringWebView
+        _ = retiringWebView.perform(Selector(("loadHTMLString:baseURL:")), with: "", with: nil)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self else { return }
+            _ = self.drainingWebViews[drainKey]?.perform(Selector(("stopLoading")))
+            self.drainingWebViews.removeValue(forKey: drainKey)
         }
 
-        self.webView = nil
+        self.InterceptContentController = nil
         self.currentConfig = nil
         self.currentPageUrl = ""
         self.handledUrls.removeAll()
@@ -379,6 +391,7 @@ final class TVOSMediaResolver: NSObject {
         _ = webViewInstance.perform(Selector(("setNavigationDelegate:")), with: self)
         print("✅ 5. 代理设置成功，初始化完成！")
         
+        self.InterceptContentController = contentController
         self.webView = webViewInstance
     }
     
