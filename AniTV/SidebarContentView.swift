@@ -19,9 +19,7 @@ enum NavigationCategory: String, Hashable {
 
 struct SidebarContentView: View {
     @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
-    @State private var selectedCategory: NavigationCategory? = .home
-    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
-    @State private var presentedAnimeDetailID: Int?
+    @StateObject private var router = AppRouter()
     @State private var showingProfileSelection = false
     @State private var currentProfile: UserProfile?
     @State private var homeContinueWatchingRefreshToken = 0
@@ -37,9 +35,9 @@ struct SidebarContentView: View {
     }
 
     var body: some View {
-        ZStack {
+        NavigationStack(path: $router.path) {
             NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-                List(selection: $selectedCategory) {
+                List(selection: selectedCategory) {
                     Section {
                         Button {
                             showingProfileSelection = true
@@ -91,59 +89,77 @@ struct SidebarContentView: View {
                 }
             } detail: {
                 SidebarDetailView(
-                    selectedCategory: $selectedCategory,
-                    columnVisibility: $columnVisibility,
+                    selectedCategory: selectedCategory,
+                    columnVisibility: sidebarColumnVisibility,
                     homeContinueWatchingRefreshToken: homeContinueWatchingRefreshToken,
-                    openAnimeDetail: openAnimeDetail
+                    openAnimeDetail: router.showAnimeDetail
                 )
             }
-            .disabled(presentedAnimeDetailID != nil)
-
-            if let bgmId = presentedAnimeDetailID {
-                AnimeDetailScreen(
-                    bgmId: bgmId,
-                    onClose: {
-                        let shouldRefreshHomeContinueWatching = (selectedCategory ?? .home) == .home
-
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            columnVisibility = .detailOnly
-                            presentedAnimeDetailID = nil
+            .navigationDestination(for: AppRoute.self) { route in
+                switch route {
+                case .animeDetail(let bgmId):
+                    AnimeDetailScreen(
+                        bgmId: bgmId,
+                        onClose: {
+                            if router.selectedCategory == .home {
+                                homeContinueWatchingRefreshToken += 1
+                            }
                         }
-
-                        if shouldRefreshHomeContinueWatching {
-                            homeContinueWatchingRefreshToken += 1
+                    )
+                    .environmentObject(router)
+                case .episodePlayer(let route):
+                    AnimeEpisodePlayerScreen(
+                        episodes: route.episodes,
+                        initialEpisodeID: route.initialEpisodeID,
+                        sessionTitle: route.sessionTitle,
+                        initialPlaybackPositionSeconds: route.initialPlaybackPositionSeconds,
+                        onScreenDisappear: {
+                            router.notifyPlayerDismissed()
+                        },
+                        onExitCommandAction: {
+                            router.pop()
                         }
-                    }
-                )
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationBarBackButtonHidden(true)
+                }
             }
         }
         .sheet(isPresented: $showingProfileSelection) {
             ProfileSwitcherView(currentUser: currentUserName)
         }
         .onAppear {
-            selectedCategory = NavigationCategory(rawValue: selectedCategoryRawValue) ?? .home
+            if let category = NavigationCategory(rawValue: selectedCategoryRawValue) {
+                router.selectedCategory = category
+            } else {
+                router.selectedCategory = .home
+                selectedCategoryRawValue = NavigationCategory.home.rawValue
+            }
         }
         .task {
             await loadCurrentProfile()
         }
-        .onChange(of: selectedCategory) { _, newValue in
-            selectedCategoryRawValue = newValue?.rawValue ?? NavigationCategory.home.rawValue
+        .onChange(of: router.selectedCategory) { _, newValue in
+            selectedCategoryRawValue = newValue.rawValue
         }
     }
 
-    private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
+    private var selectedCategory: Binding<NavigationCategory?> {
         Binding(
-            get: { columnVisibility },
+            get: { router.selectedCategory },
             set: { newValue in
-                columnVisibility = newValue
+                router.selectedCategory = newValue ?? .home
             }
         )
     }
 
-    private func openAnimeDetail(_ bgmId: Int) {
-        presentedAnimeDetailID = bgmId
+    private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { router.columnVisibility },
+            set: { newValue in
+                router.columnVisibility = newValue
+            }
+        )
     }
 
     private func loadCurrentProfile() async {
@@ -188,16 +204,13 @@ private struct SidebarUserAvatarView: View {
     }
 }
 
-private enum AnimeDetailRoute: Hashable {
-    case player([BgmEpisodeInfo], Int, String, Int?)
-}
-
 private struct AnimeEpisodePlayerScreen: View {
     let episodes: [BgmEpisodeInfo]
     let initialEpisodeID: Int
     let sessionTitle: String
     let initialPlaybackPositionSeconds: Int?
     let onScreenDisappear: () -> Void
+    let onExitCommandAction: () -> Void
 
     @State private var currentEpisodeIndex: Int = 0
 
@@ -226,6 +239,9 @@ private struct AnimeEpisodePlayerScreen: View {
         .onDisappear {
             onScreenDisappear()
         }
+        .onExitCommand {
+            onExitCommandAction()
+        }
     }
 
     private func playNextEpisodeIfPossible() {
@@ -237,53 +253,36 @@ private struct AnimeEpisodePlayerScreen: View {
 }
 
 private struct AnimeDetailScreen: View {
+    @EnvironmentObject private var router: AppRouter
     let bgmId: Int
     let onClose: () -> Void
-    @State private var navigationPath: [AnimeDetailRoute] = []
-    @State private var playerDismissRefreshToken = 0
     @Namespace private var detailFocusScope
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            ZStack {
-                Color.black
-                    .ignoresSafeArea()
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
 
-                AnimeDetailView(
-                    bgmId: bgmId,
-                    playerDismissRefreshToken: playerDismissRefreshToken,
-                    openEpisodePlayer: { episodes, episodeInfo, sessionTitle, initialPlaybackPositionSeconds in
-                        navigationPath.append(.player(episodes, episodeInfo.id, sessionTitle, initialPlaybackPositionSeconds))
-                    }
-                )
-            }
-            .focusScope(detailFocusScope)
-            .focusSection()
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .navigationDestination(for: AnimeDetailRoute.self) { route in
-                switch route {
-                case .player(let episodes, let episodeID, let sessionTitle, let initialPlaybackPositionSeconds):
-                    AnimeEpisodePlayerScreen(
+            AnimeDetailView(
+                bgmId: bgmId,
+                playerDismissRefreshToken: router.playerDismissRefreshToken,
+                openEpisodePlayer: { episodes, episodeInfo, sessionTitle, initialPlaybackPositionSeconds in
+                    router.showEpisodePlayer(
                         episodes: episodes,
-                        initialEpisodeID: episodeID,
+                        episodeID: episodeInfo.id,
                         sessionTitle: sessionTitle,
-                        initialPlaybackPositionSeconds: initialPlaybackPositionSeconds,
-                        onScreenDisappear: {
-                            playerDismissRefreshToken += 1
-                        }
+                        initialPlaybackPositionSeconds: initialPlaybackPositionSeconds
                     )
-                    .toolbar(.hidden, for: .navigationBar)
-                    .navigationBarBackButtonHidden(true)
                 }
-            }
+            )
         }
+        .focusScope(detailFocusScope)
+        .focusSection()
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         .onExitCommand {
-            if navigationPath.isEmpty {
-                onClose()
-            } else {
-                navigationPath.removeLast()
-            }
+            onClose()
+            router.pop()
         }
     }
 }
