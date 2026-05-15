@@ -228,7 +228,7 @@ extension AniTVDatabase {
 
         let age = now.timeIntervalSince(updatedAt)
         let shouldRefresh = age >= maxAge
-        print("[AniTVDatabase] bangumi-data last refreshed at \(updatedAt), age: \(age)s, should refresh: \(shouldRefresh)")
+//        print("[AniTVDatabase] bangumi-data last refreshed at \(updatedAt), age: \(age)s, should refresh: \(shouldRefresh)")
         return shouldRefresh
     }
 

@@ -117,7 +117,7 @@ extension AniTVDatabase {
 
         let age = now.timeIntervalSince(lastFetchedAt)
         let shouldRefresh = age >= maxAge
-        print("[AniTVDatabase] media sources last refreshed at \(lastFetchedAt), age: \(age)s, should refresh: \(shouldRefresh)")
+        // print("[AniTVDatabase] media sources last refreshed at \(lastFetchedAt), age: \(age)s, should refresh: \(shouldRefresh)")
         return shouldRefresh
     }
 
@@ -148,8 +148,7 @@ extension AniTVDatabase {
                 FROM "media_sources"
                 ORDER BY "id" ASC
                 """
-            )
-            .map { row in
+            ).map { row in
                 (
                     row["id"] as Int,
                     row["factory_id"] as String,
