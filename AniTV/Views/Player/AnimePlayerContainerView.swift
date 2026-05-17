@@ -489,7 +489,13 @@ struct AnimePlayerContainerView: View {
                             episodeEp: .normal(number: Float(Int(episodeInfo.ep)))
                         ))
 
-                        let resources = result.map {
+                        // 线路选择面板优先选择 session title exact match 的项目
+                        let exactMatchedItems = result.filter {
+                            $0.media.properties.subjectName == sessionTitle
+                        }
+                        let displayedItems = exactMatchedItems.isEmpty ? result : exactMatchedItems
+
+                        let resources = displayedItems.map {
                             VideoResource(
                                 resourceName: $0.media.properties.alliance,
                                 url: $0.media.originalUrl,
