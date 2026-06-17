@@ -9,7 +9,7 @@ import SwiftUI
 import Combine
 
 private let sourcePanelHeight: CGFloat = 324
-
+private let sourcePanelRowHeight: CGFloat = 52
 fileprivate enum SourcePanelFocusTarget: Hashable {
     case source(Int)
     case resource(Int)
@@ -326,6 +326,30 @@ struct SourceSwitchPanelView: View {
         }
     }
 
+    private var preferredResourceFocusIndex: Int? {
+        if let pendingResourceIndex = model.pendingResourceIndex,
+           model.focusedResources.indices.contains(pendingResourceIndex) {
+            return pendingResourceIndex
+        }
+
+        if let committedResourceIndex = model.committedResourceIndex,
+           model.focusedResources.indices.contains(committedResourceIndex) {
+            return committedResourceIndex
+        }
+
+        if model.focusedResources.indices.contains(0) {
+            return 0
+        }
+
+        return nil
+    }
+
+    private var selectedBackgroundSourceIndex: Int? {
+        guard isResourceColumnFocused,
+              model.sources.indices.contains(model.focusedSourceIndex) else { return nil }
+        return model.focusedSourceIndex
+    }
+
     private func resourceIndicator(for index: Int) -> SourcePanelButtonRow.Indicator {
         if model.isPendingResource(index) {
             return .loading
@@ -344,16 +368,30 @@ struct SourceSwitchPanelView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .center, spacing: 12) {
                     ForEach(Array(model.sources.enumerated()), id: \.offset) { index, source in
+                        let showsSelectedBackground = selectedBackgroundSourceIndex == index
+
                         panelButton(
                             title: source.sourceName,
                             indicator: model.isPlayingSource(index) ? .checkmark : .none,
                             isFocused: focusedTarget == .source(index),
+                            showsSelectedBackground: showsSelectedBackground,
                             isInitiallyFocused: preferredInitialFocusTarget == .source(index),
                             focusScope: sourcePanelFocusScope,
                             focusTarget: SourcePanelFocusTarget.source(index),
                             focusedTarget: $focusedTarget,
                         ) {
                             model.focusSource(at: index)
+                        }
+                        .onMoveCommand { direction in
+                            guard focusedTarget == .source(index) else { return }
+
+                            switch direction {
+                            case .right:
+                                guard let targetResourceIndex = preferredResourceFocusIndex else { return }
+                                focusedTarget = .resource(targetResourceIndex)
+                            default:
+                                break
+                            }
                         }
                         .id(index)
                     }
@@ -418,6 +456,17 @@ struct SourceSwitchPanelView: View {
                             ) {
                                 model.selectResource(at: index)
                             }
+                            .onMoveCommand { direction in
+                                guard focusedTarget == .resource(index) else { return }
+
+                                switch direction {
+                                case .left:
+                                    guard let targetSourceIndex = selectedBackgroundSourceIndex else { return }
+                                    focusedTarget = .source(targetSourceIndex)
+                                default:
+                                    break
+                                }
+                            }
                             .id(index)
                         }
                     }
@@ -455,10 +504,18 @@ struct SourceSwitchPanelView: View {
         }
     }
 
+    private var isResourceColumnFocused: Bool {
+        if case .resource = focusedTarget {
+            return true
+        }
+        return false
+    }
+
     private func panelButton(
         title: String,
         indicator: SourcePanelButtonRow.Indicator,
         isFocused: Bool,
+        showsSelectedBackground: Bool = false,
         isInitiallyFocused: Bool,
         focusScope: Namespace.ID,
         focusTarget: SourcePanelFocusTarget,
@@ -469,6 +526,7 @@ struct SourceSwitchPanelView: View {
             title: title,
             indicator: indicator,
             isFocused: isFocused,
+            showsSelectedBackground: showsSelectedBackground,
             isInitiallyFocused: isInitiallyFocused,
             focusScope: focusScope,
             focusTarget: focusTarget,
@@ -483,7 +541,7 @@ struct SourceSwitchPanelView: View {
                 .font(.system(size: 27, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.55))
         }
-        .frame(height: 52)
+        .frame(height: sourcePanelRowHeight)
         .padding(.horizontal, 18)
         .frame(maxWidth: .infinity)
     }
@@ -509,6 +567,7 @@ private struct SourcePanelButtonRow: View {
     let title: String
     let indicator: Indicator
     let isFocused: Bool
+    let showsSelectedBackground: Bool
     let isInitiallyFocused: Bool
     let focusScope: Namespace.ID
     let focusTarget: SourcePanelFocusTarget
@@ -542,7 +601,7 @@ private struct SourcePanelButtonRow: View {
             .foregroundStyle(isFocused ? Color.black : Color.white)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 14)
-            .frame(height: 52)
+            .frame(height: sourcePanelRowHeight)
 
         return HStack(spacing: 10) {
             leadingIndicator
@@ -552,7 +611,11 @@ private struct SourcePanelButtonRow: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(isFocused ? Color.white.opacity(0.92) : Color.clear)
+                    .fill(
+                        isFocused
+                            ? Color.white.opacity(0.92)
+                            : (showsSelectedBackground ? Color.white.opacity(0.22) : Color.clear)
+                    )
             )
             .buttonStyle(CleanButtonStyle())
             .prefersDefaultFocus(isInitiallyFocused, in: focusScope)
