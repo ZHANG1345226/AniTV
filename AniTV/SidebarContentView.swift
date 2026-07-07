@@ -18,12 +18,16 @@ enum NavigationCategory: String, Hashable {
 }
 
 struct SidebarContentView: View {
-    @AppStorage("AniTV.SelectedCategory") private var selectedCategoryRawValue = NavigationCategory.home.rawValue
+    @Environment(\.resetFocus) private var resetFocus
     @StateObject private var router = AppRouter()
     @State private var showingProfileSelection = false
     @State private var currentProfile: UserProfile?
     @State private var homeContinueWatchingRefreshToken = 0
     @Dependency(\.defaultDatabase) private var database
+    @FocusState private var focusedCategory: NavigationCategory?
+    @FocusState private var isSidebarFocused: Bool
+    @FocusState private var isProfileButtonFocused: Bool
+    @Namespace private var sidebarFocusScope
 
     private var currentUserName: String {
         currentProfile?.effectiveNickname ?? "Guest"
@@ -46,47 +50,74 @@ struct SidebarContentView: View {
                                 SidebarUserAvatarView(url: currentUserAvatarURL)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(currentUserName)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.white.opacity(0.9))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    ZStack(alignment: .leading) {
+                                        Text(currentUserName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.white.opacity(0.9))
+                                            .opacity(isProfileButtonFocused ? 0 : 1)
 
-                                    Text("切换账户")
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.72))
+                                        Text(currentUserName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                            .opacity(isProfileButtonFocused ? 1 : 0)
+                                    }
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    if isProfileButtonFocused {
+                                        Text("切换账户")
+                                            .font(.caption)
+                                            .foregroundStyle(.white.opacity(0.72))
+                                            .transition(
+                                                .opacity.combined(with: .move(edge: .top))
+                                            )
+                                    }
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             }
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             .padding(.vertical, 6)
+                            .animation(.easeInOut(duration: 0.22), value: isProfileButtonFocused)
                         }
                         .buttonStyle(.plain)
+                        .focused($isProfileButtonFocused)
                     }
 
                     Section {
                         NavigationLink(value: NavigationCategory.search) {
                             Label("搜索", systemImage: "magnifyingglass")
                         }
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .search, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .search)
 
                         NavigationLink(value: NavigationCategory.home) {
                             Label("首页", systemImage: "house")
                         }
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .home, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .home)
 
                         NavigationLink(value: NavigationCategory.animeList) {
                             Label("收藏", systemImage: "play.tv")
                         }
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .animeList, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .animeList)
 
                         NavigationLink(value: NavigationCategory.timeline) {
                             Label("时间线", systemImage: "calendar")
                         }
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .timeline, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .timeline)
 
                         NavigationLink(value: NavigationCategory.settings) {
                             Label("设置", systemImage: "gear")
                         }
+                        .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .settings, in: sidebarFocusScope)
+                        .focused($focusedCategory, equals: .settings)
                     }.padding(.top, 60)
                 }
+                .focused($isSidebarFocused)
+                .focusScope(sidebarFocusScope)
             } detail: {
                 SidebarDetailView(
                     selectedCategory: selectedCategory,
@@ -129,18 +160,26 @@ struct SidebarContentView: View {
             ProfileSwitcherView(currentUser: currentUserName)
         }
         .onAppear {
-            if let category = NavigationCategory(rawValue: selectedCategoryRawValue) {
-                router.selectedCategory = category
-            } else {
-                router.selectedCategory = .home
-                selectedCategoryRawValue = NavigationCategory.home.rawValue
-            }
+            router.selectedCategory = .home
+            requestSidebarFocus()
         }
         .task {
             await loadCurrentProfile()
         }
         .onChange(of: router.selectedCategory) { _, newValue in
-            selectedCategoryRawValue = newValue.rawValue
+            if router.columnVisibility != .detailOnly {
+                focusedCategory = newValue
+            }
+        }
+        .onChange(of: isSidebarFocused) { oldValue, newValue in
+            if !oldValue, newValue {
+                requestSidebarFocus()
+            }
+        }
+        .onChange(of: router.columnVisibility) { oldValue, newValue in
+            if oldValue == .detailOnly, newValue != .detailOnly {
+                requestSidebarFocus()
+            }
         }
     }
 
@@ -160,6 +199,21 @@ struct SidebarContentView: View {
                 router.columnVisibility = newValue
             }
         )
+    }
+
+    private var shouldPreferSidebarFocus: Bool {
+        router.columnVisibility != .detailOnly && router.path.isEmpty
+    }
+
+    private func requestSidebarFocus() {
+        Task { @MainActor in
+            focusedCategory = nil
+            isProfileButtonFocused = false
+            try? await Task.sleep(for: .milliseconds(150))
+            guard router.columnVisibility != .detailOnly, router.path.isEmpty else { return }
+            focusedCategory = router.selectedCategory
+            resetFocus(in: sidebarFocusScope)
+        }
     }
 
     private func loadCurrentProfile() async {
