@@ -31,8 +31,8 @@ extension AniTVDatabase {
         in database: any DatabaseWriter
     ) async throws -> TimelineDayMap? {
         let minUpdatedAt = Int(Date().timeIntervalSince1970 - maxAge)
-        let payload: String? = try await database.read { db in
-            try #sql(
+        return try await database.read { db in
+            let payload: String? = try #sql(
                 """
                 SELECT "payload"
                 FROM "timeline_map_cache"
@@ -42,11 +42,11 @@ extension AniTVDatabase {
                 as: String.self
             )
             .fetchOne(db)
-        }
 
-        guard let payload else { return nil }
-        let data = Data(payload.utf8)
-        return try JSONDecoder().decode(TimelineDayMap.self, from: data)
+            guard let payload else { return nil }
+            let data = Data(payload.utf8)
+            return try JSONDecoder().decode(TimelineDayMap.self, from: data)
+        }
     }
 
     static func upsertTimelineMapCache(
@@ -54,11 +54,10 @@ extension AniTVDatabase {
         map: TimelineDayMap,
         in database: any DatabaseWriter
     ) async throws {
-        let payloadData = try JSONEncoder().encode(map)
-        guard let payload = String(data: payloadData, encoding: .utf8) else { return }
-
-        let now = Int(Date().timeIntervalSince1970)
         try await database.write { db in
+            let payloadData = try JSONEncoder().encode(map)
+            guard let payload = String(data: payloadData, encoding: .utf8) else { return }
+            let now = Int(Date().timeIntervalSince1970)
             try db.execute(
                 sql: """
                 INSERT INTO "timeline_map_cache" (

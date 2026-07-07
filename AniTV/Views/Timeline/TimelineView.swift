@@ -32,8 +32,18 @@ final class TimelineStore: ObservableObject {
         isLoading = true
         errorMessage = ""
 
+        let startTime = Date()
+
         do {
             let map = try await service.fetchTimelineMap(database: database)
+            
+            // Ensure loading takes at least 400ms to allow tvOS focus transitions
+            // and sidebar collapse animations to stabilize before replacing the view hierarchy.
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed < 0.4 {
+                try? await Task.sleep(for: .milliseconds(Int((0.4 - elapsed) * 1000)))
+            }
+
             timeline = map
             orderedDays = map.keys.sorted()
             isLoading = false
@@ -56,6 +66,7 @@ struct TimelineView: View {
             if store.isLoading {
                 ProgressView()
                     .tint(.white)
+                    .focusable()
             } else if !store.errorMessage.isEmpty {
                 ContentUnavailableView(
                     "时间线加载失败",
@@ -117,18 +128,33 @@ private struct TimelineBoardView: View {
     @State private var currentTime = Date()
     private let currentTimeTicker = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
+    /// The day key and entry ID of the last aired episode across all days.
+    /// Computed property so it's available from the very first render.
+    private var lastAiredTarget: (day: String, entryID: String)? {
+        let nowTimestamp = Int(currentTime.timeIntervalSince1970)
+        for day in orderedDays.reversed() {
+            let entries = timeline[day, default: []]
+            if let lastAired = entries.last(where: { $0.airingTimestamp <= nowTimestamp }) {
+                return (day, lastAired.id)
+            }
+        }
+        return nil
+    }
+
     var body: some View {
+        let initialFocusDay = lastAiredTarget?.day ?? orderedDays.first
+
         ScrollViewReader { scrollProxy in
             GeometryReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 28) {
+                    HStack(alignment: .top, spacing: 28) {
                         ForEach(orderedDays, id: \.self) { day in
                             TimelineDayColumnView(
                                 dayKey: day,
                                 entries: timeline[day, default: []],
                                 isToday: day == TimelineBoardFormatter.todayKey,
                                 availableHeight: max(proxy.size.height - 36, 320),
-                                shouldPreferInitialFocus: day == TimelineBoardFormatter.todayKey,
+                                shouldPreferInitialFocus: day == initialFocusDay,
                                 currentTime: currentTime,
                                 focusedEntryID: $focusedEntryID,
                                 focusScope: timelineFocusScope,
@@ -156,37 +182,28 @@ private struct TimelineBoardView: View {
     }
 
     private func focusInitialEntry(using scrollProxy: ScrollViewProxy) async {
-        guard let targetDay = orderedDays.first(where: { $0 == TimelineBoardFormatter.todayKey }) else {
-            return
-        }
+        guard let (targetDay, targetEntryID) = lastAiredTarget else { return }
 
-        let todayIndex = orderedDays.firstIndex(of: targetDay) ?? 0
-        let leadingIndex = max(todayIndex - 1, 0)
+        let dayIndex = orderedDays.firstIndex(of: targetDay) ?? 0
+        let leadingIndex = max(dayIndex - 1, 0)
         let leadingDay = orderedDays[leadingIndex]
+
+        // Brief delay to let prefersDefaultFocus auto-scroll resolve,
+        // then override with our desired position (D-1 at leading edge).
+        try? await Task.sleep(for: .milliseconds(100))
 
         withAnimation(.easeInOut(duration: 0.35)) {
             scrollProxy.scrollTo(leadingDay, anchor: .leading)
         }
 
-        try? await Task.sleep(for: .milliseconds(350))
+        // Wait for the horizontal scroll to settle, then set focus.
+        // The column's onChange gate is still closed at this point,
+        // so this won't cause a .center vertical scroll override.
+        try? await Task.sleep(for: .milliseconds(400))
 
-        guard let targetEntryID = preferredEntryID(for: targetDay) else { return }
         focusedEntryID = nil
         await Task.yield()
         focusedEntryID = targetEntryID
-    }
-
-    private func preferredEntryID(for dayKey: String) -> String? {
-        let entries = timeline[dayKey, default: []]
-        guard !entries.isEmpty else { return nil }
-
-        let nowTimestamp = Int(currentTime.timeIntervalSince1970)
-        if let nextIndex = entries.firstIndex(where: { $0.airingTimestamp > nowTimestamp }) {
-            let targetIndex = max(nextIndex - 1, 0)
-            return entries[targetIndex].id
-        }
-
-        return entries.last?.id
     }
 }
 
@@ -203,6 +220,7 @@ private struct TimelineDayColumnView: View {
 
     private let headerHeight: CGFloat = 72
     @State private var didScrollToPreferredEntry = false
+    @State private var didInitialVerticalScroll = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -227,7 +245,7 @@ private struct TimelineDayColumnView: View {
 
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                             if shouldShowSplitter(before: index) {
                                 TimelineNowSplitter(currentTime: currentTime)
@@ -253,19 +271,34 @@ private struct TimelineDayColumnView: View {
                 .task {
                     guard shouldPreferInitialFocus,
                           !didScrollToPreferredEntry,
-                          let preferredEntryID else { return }
+                          let anchorID = verticalScrollAnchorID else { return }
 
                     didScrollToPreferredEntry = true
-                    DispatchQueue.main.async {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            scrollProxy.scrollTo(preferredEntryID, anchor: .center)
-                        }
-                        focusedEntryID.wrappedValue = preferredEntryID
+
+                    // Wait for prefersDefaultFocus auto-scroll to settle,
+                    // then override with our desired position.
+                    try? await Task.sleep(for: .milliseconds(100))
+
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        scrollProxy.scrollTo(anchorID, anchor: .top)
                     }
+
+                    // Keep the onChange gate closed long enough to cover the board's
+                    // programmatic focus set (~500ms from view appear), preventing
+                    // .center scrolls from overriding our .top position.
+                    try? await Task.sleep(for: .milliseconds(600))
+                    didInitialVerticalScroll = true
                 }
                 .onChange(of: focusedEntryID.wrappedValue) { _, newValue in
                     guard let newValue,
                           entries.contains(where: { $0.id == newValue }) else { return }
+
+                    // Suppress scroll during initial setup — the .task above
+                    // already positioned the scroll correctly.
+                    if shouldPreferInitialFocus && !didInitialVerticalScroll {
+                        return
+                    }
+
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             scrollProxy.scrollTo(newValue, anchor: .center)
@@ -297,6 +330,15 @@ private struct TimelineDayColumnView: View {
     private var preferredEntryID: String? {
         guard entries.indices.contains(preferredFocusIndex) else { return nil }
         return entries[preferredFocusIndex].id
+    }
+
+    /// The entry 2 positions before the preferred focus target, used as
+    /// the vertical scroll anchor with `.top` so the target appears
+    /// more towards the center of the screen.
+    private var verticalScrollAnchorID: String? {
+        let anchorIndex = max(preferredFocusIndex - 2, 0)
+        guard entries.indices.contains(anchorIndex) else { return nil }
+        return entries[anchorIndex].id
     }
 
     private var shouldShowSplitterAtEnd: Bool {
