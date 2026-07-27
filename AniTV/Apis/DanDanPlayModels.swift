@@ -27,6 +27,7 @@ struct DanDanPlayEpisode: Codable {
     let episodeId: Int
     let episodeTitle: String
     let episodeNumber: String?
+    let airDate: String?
 }
 
 struct DanDanPlayCommentResponse: Codable {

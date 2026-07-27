@@ -288,8 +288,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "85"
             endingLineNumber = "85"
-            landmarkName = "makeCoordinator()"
-            landmarkType = "7">
+            landmarkName = "AdvancedVideoPlayer"
+            landmarkType = "14">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy

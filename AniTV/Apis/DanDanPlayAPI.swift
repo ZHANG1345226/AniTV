@@ -39,7 +39,41 @@ class DanDanPlayAPI {
         ]
     }
 
-    func getBangumiDetails(bgmId: Int) async throws -> DanDanPlayBangumi {
+    func getBangumiDetails(bgmId: Int, targetSort: Double? = nil) async throws -> DanDanPlayBangumi {
+        let cache = DanDanPlayCacheManager.shared
+        let sortString = targetSort.map { String(Int($0)) }
+        
+        // 1. Check local cache first
+        if let cachedBangumi = cache.getCachedBangumi(bgmId: bgmId) {
+            if let sortString = sortString {
+                let hasEpisode = cachedBangumi.episodes.contains { ep in
+                    ep.episodeNumber == sortString ||
+                    ep.episodeTitle == sortString ||
+                    ep.episodeTitle.contains("第\(sortString)话") ||
+                    ep.episodeTitle.contains("第\(sortString)集")
+                }
+                if hasEpisode {
+                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId) with episode \(sortString)")
+                    return cachedBangumi
+                } else {
+                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId), but episode \(sortString) missing")
+                }
+            } else {
+                print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId)")
+                return cachedBangumi
+            }
+        }
+        
+        // 2. Cache missing or episode missing: check 2-hour throttling
+        if cache.isBangumiFetchThrottled(bgmId: bgmId) {
+            print("[DanDanPlayCache] Fetch throttled for bgmId \(bgmId) (last requested within 2 hours)")
+            if let cachedBangumi = cache.getCachedBangumi(bgmId: bgmId) {
+                return cachedBangumi
+            }
+            throw DanDanPlayError.apiError("Fetch throttled (requested within 2 hours)")
+        }
+        
+        // 3. Request remote API
         let path = "/api/v2/bangumi/bgmtv/\(bgmId)"
         guard let url = URL(string: baseURL + path) else {
             throw DanDanPlayError.invalidURL
@@ -49,27 +83,41 @@ class DanDanPlayAPI {
         request.httpMethod = "GET"
         request.allHTTPHeaderFields = generateHeaders(for: path)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                cache.recordBangumiFetchTime(bgmId: bgmId)
+                throw DanDanPlayError.invalidResponse
+            }
 
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw DanDanPlayError.invalidResponse
+            let decoder = JSONDecoder()
+            let result = try decoder.decode(DanDanPlayBangumiDetailsResponse.self, from: data)
+
+            if let errorMessage = result.errorMessage, result.success == false {
+                cache.recordBangumiFetchTime(bgmId: bgmId)
+                throw DanDanPlayError.apiError(errorMessage)
+            }
+
+            guard let bangumi = result.bangumi else {
+                cache.recordBangumiFetchTime(bgmId: bgmId)
+                throw DanDanPlayError.invalidResponse
+            }
+
+            cache.saveBangumi(bangumi, bgmId: bgmId)
+            return bangumi
+        } catch {
+            cache.recordBangumiFetchTime(bgmId: bgmId)
+            throw error
         }
-
-        let decoder = JSONDecoder()
-        let result = try decoder.decode(DanDanPlayBangumiDetailsResponse.self, from: data)
-
-        if let errorMessage = result.errorMessage, result.success == false {
-            throw DanDanPlayError.apiError(errorMessage)
-        }
-
-        guard let bangumi = result.bangumi else {
-            throw DanDanPlayError.invalidResponse
-        }
-
-        return bangumi
     }
 
-    func getComments(episodeId: Int) async throws -> [DanDanPlayComment] {
+    func getComments(episodeId: Int, airDateString: String? = nil) async throws -> [DanDanPlayComment] {
+        let cache = DanDanPlayCacheManager.shared
+        
+        if let cachedComments = cache.getCachedComments(episodeId: episodeId, airDateString: airDateString) {
+            return cachedComments
+        }
+        
         let path = "/api/v2/comment/\(episodeId)"
         guard var urlComponents = URLComponents(string: baseURL + path) else {
             throw DanDanPlayError.invalidURL
@@ -85,7 +133,7 @@ class DanDanPlayAPI {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.allHTTPHeaderFields = generateHeaders(for: path) // path doesn't include query string according to docs
+        request.allHTTPHeaderFields = generateHeaders(for: path)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -96,6 +144,7 @@ class DanDanPlayAPI {
         let decoder = JSONDecoder()
         let result = try decoder.decode(DanDanPlayCommentResponse.self, from: data)
 
+        cache.saveComments(result.comments, episodeId: episodeId, airDateString: airDateString)
         return result.comments
     }
 }

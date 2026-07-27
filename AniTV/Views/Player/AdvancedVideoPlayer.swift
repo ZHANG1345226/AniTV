@@ -69,6 +69,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     var availableSources: [VideoSource]
     @Binding var isSourcePanelPresented: Bool
     var danmuManager: DanmuViewManager?
+    var isDanmakuAvailable: Bool = true
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
     var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
@@ -161,13 +162,15 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     }
 
     private func getDanmakuMenu(uiViewController: AVPlayerViewController, context: Context) -> UIMenu {
-        let isEnabled = context.coordinator.isDanmakuEnabled
+        let isEnabled = context.coordinator.isDanmakuEnabled && isDanmakuAvailable
         let currentArea = context.coordinator.selectedDisplayArea
         
         let toggleAction = UIAction(
-            title: "弹幕开关",
+            title: isDanmakuAvailable ? "弹幕开关" : "获取弹幕失败",
+            attributes: isDanmakuAvailable ? [] : [.disabled],
             state: isEnabled ? .on : .off
         ) { _ in
+            guard isDanmakuAvailable else { return }
             context.coordinator.isDanmakuEnabled.toggle()
             let newEnabled = context.coordinator.isDanmakuEnabled
             danmuManager?.isEnabled = newEnabled
@@ -189,8 +192,10 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let areaActions = areaOptions.map { item in
             UIAction(
                 title: item.title,
+                attributes: isDanmakuAvailable ? [] : [.disabled],
                 state: (abs(currentArea - item.area) < 0.01) ? .on : .off
             ) { _ in
+                guard isDanmakuAvailable else { return }
                 context.coordinator.selectedDisplayArea = item.area
                 danmuManager?.displayArea = item.area
                 uiViewController.transportBarCustomMenuItems = [

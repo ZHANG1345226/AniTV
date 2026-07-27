@@ -24,15 +24,18 @@ class DanDanPlayDanmuProvider: DanmuProviderProtocol {
     private var lastTime: TimeInterval = 0
     private var danmuIdx: Int = 0
     
-    init(episodeId: Int) {
+    var onCompletion: ((_ success: Bool) -> Void)?
+    
+    init(episodeId: Int, airDateString: String? = nil, onCompletion: ((_ success: Bool) -> Void)? = nil) {
+        self.onCompletion = onCompletion
         Task {
-            await fetchComments(episodeId: episodeId)
+            await fetchComments(episodeId: episodeId, airDateString: airDateString)
         }
     }
     
-    private func fetchComments(episodeId: Int) async {
+    private func fetchComments(episodeId: Int, airDateString: String?) async {
         do {
-            let comments = try await DanDanPlayAPI.shared.getComments(episodeId: episodeId)
+            let comments = try await DanDanPlayAPI.shared.getComments(episodeId: episodeId, airDateString: airDateString)
             let parsed = comments.compactMap { comment -> ParsedDanDanPlayDanmu? in
                 let parts = comment.p.components(separatedBy: ",")
                 guard parts.count >= 4,
@@ -48,8 +51,10 @@ class DanDanPlayDanmuProvider: DanmuProviderProtocol {
             self.danmuIdx = 0
             self.lastTime = 0
             print("[DanDanPlay] Loaded \(self.allDanmus.count) danmus for episode \(episodeId)")
+            onCompletion?(true)
         } catch {
             print("[DanDanPlay] Failed to fetch comments for episode \(episodeId): \(error)")
+            onCompletion?(false)
         }
     }
     

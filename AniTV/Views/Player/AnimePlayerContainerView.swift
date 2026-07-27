@@ -162,7 +162,8 @@ struct AnimePlayerContainerView: View {
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
     @State private var danmuManager: DanmuViewManager?
-    
+    @State private var isDanmakuAvailable = true
+
     let episodeInfo: BgmEpisodeInfo
     let sessionTitle: String
     let initialPlaybackPositionSeconds: Int?
@@ -190,6 +191,7 @@ struct AnimePlayerContainerView: View {
                 availableSources: videoSources,
                 isSourcePanelPresented: $isSourcePanelPresented,
                 danmuManager: danmuManager,
+                isDanmakuAvailable: isDanmakuAvailable,
                 onSourceSelected: handleUserSelectedResource
             )
                 .ignoresSafeArea()
@@ -657,34 +659,40 @@ struct AnimePlayerContainerView: View {
     private func setupDanmaku(bgmId: Int, sort: Double) {
         Task {
             do {
-                let bangumi = try await DanDanPlayAPI.shared.getBangumiDetails(bgmId: bgmId)
+                let bangumi = try await DanDanPlayAPI.shared.getBangumiDetails(bgmId: bgmId, targetSort: sort)
                 let sortString = String(Int(sort))
-                var targetEpisodeId: Int? = nil
+                var matchedEpisode: DanDanPlayEpisode? = nil
                 
                 for ep in bangumi.episodes {
                     if ep.episodeNumber == sortString || ep.episodeTitle == sortString || ep.episodeTitle.contains("第\(sortString)话") || ep.episodeTitle.contains("第\(sortString)集") || ep.episodeTitle == "0\(sortString)" {
-                        targetEpisodeId = ep.episodeId
+                        matchedEpisode = ep
                         break
                     }
                 }
                 
-                if targetEpisodeId == nil {
+                if matchedEpisode == nil {
                     for ep in bangumi.episodes {
                         let numbers = ep.episodeTitle.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
                         if numbers.contains(sortString) {
-                            targetEpisodeId = ep.episodeId
+                            matchedEpisode = ep
                             break
                         }
                     }
                 }
                 
-                if targetEpisodeId == nil, let first = bangumi.episodes.first(where: { $0.episodeTitle.contains(sortString) }) {
-                    targetEpisodeId = first.episodeId
+                if matchedEpisode == nil, let first = bangumi.episodes.first(where: { $0.episodeTitle.contains(sortString) }) {
+                    matchedEpisode = first
                 }
                 
-                if let epId = targetEpisodeId {
-                    print("[DanDanPlay] Found episode \(epId) for sort \(sort) in bgmId \(bgmId)")
-                    let provider = DanDanPlayDanmuProvider(episodeId: epId)
+                if let ep = matchedEpisode {
+                    print("[DanDanPlay] Found episode \(ep.episodeId) for sort \(sort) in bgmId \(bgmId)")
+                    let provider = DanDanPlayDanmuProvider(episodeId: ep.episodeId, airDateString: ep.airDate) { success in
+                        DispatchQueue.main.async {
+                            if !success {
+                                self.isDanmakuAvailable = false
+                            }
+                        }
+                    }
                     let manager = DanmuViewManager(provider: provider)
                     await MainActor.run {
                         self.danmuManager = manager
@@ -694,9 +702,15 @@ struct AnimePlayerContainerView: View {
                     }
                 } else {
                     print("[DanDanPlay] Could not find episode matching sort \(sort) in bgmId \(bgmId)")
+                    await MainActor.run {
+                        self.isDanmakuAvailable = false
+                    }
                 }
             } catch {
                 print("[DanDanPlay] Failed to get bangumi details for bgmId \(bgmId): \(error)")
+                await MainActor.run {
+                    self.isDanmakuAvailable = false
+                }
             }
         }
     }
