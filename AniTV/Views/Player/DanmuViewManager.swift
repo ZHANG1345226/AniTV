@@ -17,6 +17,25 @@ class DanmuViewManager {
     private var statusObservation: NSKeyValueObservation?
     private weak var player: AVPlayer?
     
+    var isEnabled: Bool = true {
+        didSet {
+            danmuView.isHidden = !isEnabled
+            if !isEnabled {
+                danmuView.clean()
+            }
+        }
+    }
+    
+    var displayArea: CGFloat {
+        get {
+            return danmuView.displayArea
+        }
+        set {
+            danmuView.displayArea = newValue
+            danmuView.recaculateTracks()
+        }
+    }
+    
     init(provider: DanmuProviderProtocol) {
         self.provider = provider
         

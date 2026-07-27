@@ -78,6 +78,8 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let sourcePanelModel = SourceSwitchPanelModel()
         var detailsHostingController: UIHostingController<AniTVCustomDropdownView>?
         weak var currentDanmuManager: DanmuViewManager?
+        var isDanmakuEnabled: Bool = true
+        var selectedDisplayArea: CGFloat = 1.0
     }
     
     func makeCoordinator() -> Coordinator {
@@ -87,6 +89,8 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     private func setupDanmuManagerIfNeeded(controller: AVPlayerViewController, context: Context) {
         guard let danmuManager = danmuManager, context.coordinator.currentDanmuManager !== danmuManager else { return }
         context.coordinator.currentDanmuManager = danmuManager
+        danmuManager.isEnabled = context.coordinator.isDanmakuEnabled
+        danmuManager.displayArea = context.coordinator.selectedDisplayArea
         if let overlayView = controller.contentOverlayView {
             print("[AdvancedVideoPlayer] Attaching danmuManager to contentOverlayView with bounds: \(overlayView.bounds)")
             danmuManager.setup(with: player, in: overlayView)
@@ -136,7 +140,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         setupDanmuManagerIfNeeded(controller: controller, context: context)
         
         controller.infoViewActions = [startOverAction, favoriteAction]
-        controller.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context)]
+        controller.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context), getDanmakuMenu(uiViewController: controller, context: context)]
         return controller
     }
     
@@ -153,7 +157,63 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         }
         context.coordinator.detailsHostingController?.rootView = AniTVCustomDropdownView(title: title, sort: sort)
         context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
-        uiViewController.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context)]
+        uiViewController.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context), getDanmakuMenu(uiViewController: uiViewController, context: context)]
+    }
+
+    private func getDanmakuMenu(uiViewController: AVPlayerViewController, context: Context) -> UIMenu {
+        let isEnabled = context.coordinator.isDanmakuEnabled
+        let currentArea = context.coordinator.selectedDisplayArea
+        
+        let toggleAction = UIAction(
+            title: "弹幕开关",
+            state: isEnabled ? .on : .off
+        ) { _ in
+            context.coordinator.isDanmakuEnabled.toggle()
+            let newEnabled = context.coordinator.isDanmakuEnabled
+            danmuManager?.isEnabled = newEnabled
+            uiViewController.transportBarCustomMenuItems = [
+                getSourcePanelAction(),
+                getPipAction(context: context),
+                getDanmakuMenu(uiViewController: uiViewController, context: context)
+            ]
+        }
+        
+        let areaOptions: [(title: String, area: CGFloat)] = [
+            ("全屏", 1.0),
+            ("3/4", 0.75),
+            ("1/2", 0.5),
+            ("1/4", 0.25),
+            ("1/8", 0.125)
+        ]
+        
+        let areaActions = areaOptions.map { item in
+            UIAction(
+                title: item.title,
+                state: (abs(currentArea - item.area) < 0.01) ? .on : .off
+            ) { _ in
+                context.coordinator.selectedDisplayArea = item.area
+                danmuManager?.displayArea = item.area
+                uiViewController.transportBarCustomMenuItems = [
+                    getSourcePanelAction(),
+                    getPipAction(context: context),
+                    getDanmakuMenu(uiViewController: uiViewController, context: context)
+                ]
+            }
+        }
+        
+        let submenu = UIMenu(
+            title: "弹幕区域",
+            options: [.displayInline, .singleSelection],
+            children: areaActions
+        )
+        
+        let image = UIImage(systemName: isEnabled ? "text.bubble.fill" : "text.bubble")
+        
+        return UIMenu(
+            title: "弹幕",
+            image: image,
+            children: [toggleAction, submenu]
+        )
     }
 
     private func getSourcePanelAction() -> UIAction {
