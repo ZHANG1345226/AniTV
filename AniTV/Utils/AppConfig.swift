@@ -11,6 +11,8 @@ enum AppConfig {
     static let bangumiOAuthClientID = string(for: "BangumiOAuthClientID")
     static let bangumiOAuthClientSecret = string(for: "BangumiOAuthClientSecret")
     static let tmdbAPIKey = string(for: "TMDBApiKey")
+    static let danDanPlayAppId = string(for: "DanDanPlayAppId")
+    static let danDanPlayAppSecret = string(for: "DanDanPlayAppSecret")
 
     private static let secrets: [String: Any]? = {
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),

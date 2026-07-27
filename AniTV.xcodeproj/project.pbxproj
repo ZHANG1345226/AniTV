@@ -259,6 +259,7 @@
 				FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 				FC772DA52F49890D00FA6E3E /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				FC9293872F821734005448D4 /* XCRemoteSwiftPackageReference "sqlite-data" */,
+				FC77C5E23016536A00608F03 /* XCRemoteSwiftPackageReference "DanmakuKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FC7024D62F3B656F007C6113 /* Products */;
@@ -691,6 +692,14 @@
 				minimumVersion = 2.11.3;
 			};
 		};
+		FC77C5E23016536A00608F03 /* XCRemoteSwiftPackageReference "DanmakuKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/qyz777/DanmakuKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.0;
+			};
+		};
 		FC8382732F3CC8DC00AA6131 /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/onevcat/Kingfisher";
@@ -706,6 +715,8 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.6.1;
 			};
+			traits = (
+			);
 		};
 /* End XCRemoteSwiftPackageReference section */
 

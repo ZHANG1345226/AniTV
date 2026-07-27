@@ -161,6 +161,7 @@ struct AnimePlayerContainerView: View {
     
     // 💥 1. 新增一个 State 来强引用监听器，防止它被销毁
     @State private var statusObservation: NSKeyValueObservation?
+    @State private var danmuManager: DanmuViewManager?
     
     let episodeInfo: BgmEpisodeInfo
     let sessionTitle: String
@@ -188,6 +189,7 @@ struct AnimePlayerContainerView: View {
                 sort: Int(episodeInfo.sort),
                 availableSources: videoSources,
                 isSourcePanelPresented: $isSourcePanelPresented,
+                danmuManager: danmuManager,
                 onSourceSelected: handleUserSelectedResource
             )
                 .ignoresSafeArea()
@@ -234,6 +236,7 @@ struct AnimePlayerContainerView: View {
             onPlaybackCompleted?()
         }
         .onAppear {
+            setupDanmaku(bgmId: episodeInfo.subjectId, sort: episodeInfo.sort)
             hasResolvedAutoPlayback = false
             hasUserSelectedSource = false
             queuedVideoResources = []
@@ -280,6 +283,7 @@ struct AnimePlayerContainerView: View {
             statusObservation?.invalidate()
             statusObservation = nil
             removePlaybackProgressTracking()
+            cleanup()
         }
     }
 
@@ -614,9 +618,15 @@ struct AnimePlayerContainerView: View {
             \.timeControlStatus,
             options: [.old, .new]
         ) { _, change in
-            guard change.oldValue == .playing, change.newValue == .paused else { return }
             DispatchQueue.main.async {
-                persistPlaybackProgress(trigger: "pause")
+                if change.newValue == .playing {
+                    danmuManager?.play()
+                } else if change.newValue == .paused {
+                    danmuManager?.pause()
+                    if change.oldValue == .playing {
+                        persistPlaybackProgress(trigger: "pause")
+                    }
+                }
             }
         }
     }
@@ -628,6 +638,67 @@ struct AnimePlayerContainerView: View {
         }
         timeControlStatusObservation?.invalidate()
         timeControlStatusObservation = nil
+    }
+
+    private func cleanup() {
+        print("🧹 Cleaning up AnimePlayerContainerView...")
+        timeControlStatusObservation?.invalidate()
+        timeControlStatusObservation = nil
+
+        if let periodicTimeObserver = periodicTimeObserver {
+            player.removeTimeObserver(periodicTimeObserver)
+            self.periodicTimeObserver = nil
+        }
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        danmuManager = nil
+    }
+
+    private func setupDanmaku(bgmId: Int, sort: Double) {
+        Task {
+            do {
+                let bangumi = try await DanDanPlayAPI.shared.getBangumiDetails(bgmId: bgmId)
+                let sortString = String(Int(sort))
+                var targetEpisodeId: Int? = nil
+                
+                for ep in bangumi.episodes {
+                    if ep.episodeNumber == sortString || ep.episodeTitle == sortString || ep.episodeTitle.contains("第\(sortString)话") || ep.episodeTitle.contains("第\(sortString)集") || ep.episodeTitle == "0\(sortString)" {
+                        targetEpisodeId = ep.episodeId
+                        break
+                    }
+                }
+                
+                if targetEpisodeId == nil {
+                    for ep in bangumi.episodes {
+                        let numbers = ep.episodeTitle.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                        if numbers.contains(sortString) {
+                            targetEpisodeId = ep.episodeId
+                            break
+                        }
+                    }
+                }
+                
+                if targetEpisodeId == nil, let first = bangumi.episodes.first(where: { $0.episodeTitle.contains(sortString) }) {
+                    targetEpisodeId = first.episodeId
+                }
+                
+                if let epId = targetEpisodeId {
+                    print("[DanDanPlay] Found episode \(epId) for sort \(sort) in bgmId \(bgmId)")
+                    let provider = DanDanPlayDanmuProvider(episodeId: epId)
+                    let manager = DanmuViewManager(provider: provider)
+                    await MainActor.run {
+                        self.danmuManager = manager
+                        if player.timeControlStatus == .playing || player.rate > 0 {
+                            manager.play()
+                        }
+                    }
+                } else {
+                    print("[DanDanPlay] Could not find episode matching sort \(sort) in bgmId \(bgmId)")
+                }
+            } catch {
+                print("[DanDanPlay] Failed to get bangumi details for bgmId \(bgmId): \(error)")
+            }
+        }
     }
 
     private func persistPlaybackProgress(trigger: String) {

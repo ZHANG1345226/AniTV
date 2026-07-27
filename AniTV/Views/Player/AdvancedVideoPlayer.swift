@@ -68,6 +68,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     let sort: Int
     var availableSources: [VideoSource]
     @Binding var isSourcePanelPresented: Bool
+    var danmuManager: DanmuViewManager?
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
     var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
@@ -76,10 +77,22 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         var pipController: AVPictureInPictureController?
         let sourcePanelModel = SourceSwitchPanelModel()
         var detailsHostingController: UIHostingController<AniTVCustomDropdownView>?
+        weak var currentDanmuManager: DanmuViewManager?
     }
     
     func makeCoordinator() -> Coordinator {
         Coordinator()
+    }
+    
+    private func setupDanmuManagerIfNeeded(controller: AVPlayerViewController, context: Context) {
+        guard let danmuManager = danmuManager, context.coordinator.currentDanmuManager !== danmuManager else { return }
+        context.coordinator.currentDanmuManager = danmuManager
+        if let overlayView = controller.contentOverlayView {
+            print("[AdvancedVideoPlayer] Attaching danmuManager to contentOverlayView with bounds: \(overlayView.bounds)")
+            danmuManager.setup(with: player, in: overlayView)
+        } else {
+            print("[AdvancedVideoPlayer] Warning: contentOverlayView is nil")
+        }
     }
     
     func makeUIViewController(context: Context) -> AVPlayerViewController {
@@ -120,6 +133,8 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
             context.coordinator.pipController = AVPictureInPictureController(playerLayer: playerLayer)
         }
         
+        setupDanmuManagerIfNeeded(controller: controller, context: context)
+        
         controller.infoViewActions = [startOverAction, favoriteAction]
         controller.transportBarCustomMenuItems = [getSourcePanelAction(), getPipAction(context: context)]
         return controller
@@ -134,6 +149,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
                 guard !isSourcePanelPresented else { return }
                 isSourcePanelPresented = true
             }
+            setupDanmuManagerIfNeeded(controller: controller, context: context)
         }
         context.coordinator.detailsHostingController?.rootView = AniTVCustomDropdownView(title: title, sort: sort)
         context.coordinator.sourcePanelModel.update(sources: availableSources, onSourceSelected: onSourceSelected)
