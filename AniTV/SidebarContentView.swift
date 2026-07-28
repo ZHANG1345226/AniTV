@@ -432,6 +432,7 @@ private struct SearchPlaceholderView: View {
 private struct SettingsPlaceholderView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @EnvironmentObject private var bangumiOAuthManager: BangumiOAuthManager
+    @State private var isDebugRenderEnabled: Bool = TVOSMediaResolver.isDebugRenderEnabled
 
     private enum BangumiOAuthConfig {
         static let clientID = AppConfig.bangumiOAuthClientID
@@ -453,12 +454,41 @@ private struct SettingsPlaceholderView: View {
                     appleDeviceLoginCard
                     lanQRCodeLoginCard
                 }
+
+                webDebugCard
             }
             .padding(.horizontal, 48)
             .padding(.vertical, 40)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var webDebugCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("网页解析 Debug 模式")
+                .font(.title2.weight(.semibold))
+
+            Text("开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上，并提供状态工具栏。用于排查抓不到 m3u8、人机验证或页面加载失败问题。")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            Toggle("开启网页渲染 Debug 模式", isOn: Binding(
+                get: { isDebugRenderEnabled },
+                set: { newValue in
+                    isDebugRenderEnabled = newValue
+                    TVOSMediaResolver.isDebugRenderEnabled = newValue
+                }
+            ))
+            .toggleStyle(.switch)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        }
     }
 
     private var appleDeviceLoginCard: some View {

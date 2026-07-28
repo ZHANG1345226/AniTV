@@ -10,7 +10,7 @@ import SwiftUI
 import AVKit
 import SQLiteData
 
-private let sourceFetchConcurrency = 1
+private let sourceFetchConcurrency = 5
 
 private struct QueuedVideoResource {
     let sourceIndex: Int
