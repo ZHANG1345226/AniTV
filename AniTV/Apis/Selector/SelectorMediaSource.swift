@@ -196,13 +196,24 @@ class DefaultSelectorMediaSourceEngine: SelectorMediaSourceEngine {
     }
 
 
-    // The following `select` methods will use the placeholder logic from SelectorSubjectFormat.swift and SelectorChannelFormat.swift
+    // The following `select` methods use the format parsers defined in SelectorSubjectFormat.swift and SelectorChannelFormat.swift
     func selectSubjects(document: HTMLDocument, config: SelectorSearchConfig) -> [WebSearchSubjectInfo]? {
-        var subjectFormatInstance: SelectorSubjectFormat = SelectorSubjectFormatA()
-        if(config.subjectFormatId.value == "indexed"){
+        let subjectFormatInstance: SelectorSubjectFormat
+        let formatConfig: SelectorFormatConfig
+
+        switch config.subjectFormatId.value {
+        case "indexed":
             subjectFormatInstance = SelectorSubjectFormatIndexed()
+            formatConfig = config.selectorSubjectFormatIndexed
+        case "json-path-indexed":
+            subjectFormatInstance = SelectorSubjectFormatJsonPathIndexed()
+            formatConfig = config.selectorSubjectFormatJsonPathIndexed
+        default:
+            subjectFormatInstance = SelectorSubjectFormatA()
+            formatConfig = config.selectorSubjectFormatA
         }
-        return subjectFormatInstance.select(document: document, baseUrl: config.finalBaseUrl, config: config.selectorSubjectFormatA)
+
+        return subjectFormatInstance.select(document: document, baseUrl: config.finalBaseUrl, config: formatConfig)
     }
 
     func searchEpisodes(subjectDetailsPageUrl: String) async throws -> HTMLDocument? {
