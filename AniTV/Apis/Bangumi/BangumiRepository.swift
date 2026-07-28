@@ -47,7 +47,7 @@ struct BangumiRepository {
         limit: Int = 12,
         offset: Int = 0
     ) async throws -> BgmPagedResponse<TrendingSubjectDTO> {
-        try await fetchBrowserTrendingSubjects(type: type, limit: limit, offset: offset)
+        try await fetchPrivateTrendingSubjects(type: type, limit: limit, offset: offset)
     }
 
     /// 获取 next.bgm.tv 的热门条目，保留作为备用实现
