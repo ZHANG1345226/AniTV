@@ -104,6 +104,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let controller = AniTVPlayerViewController()
         controller.player = player
         controller.allowsPictureInPicturePlayback = true
+        controller.appliesPreferredDisplayCriteriaAutomatically = false
         controller.showsPlaybackControls = !isSourcePanelPresented
         controller.onUpArrowWhenControlsVisible = {
             guard !isSourcePanelPresented else { return }
