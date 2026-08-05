@@ -47,6 +47,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Secrets.plist,
+				Secrets.plist.example,
 			);
 			target = FC7024D42F3B656F007C6113 /* AniTV */;
 		};
@@ -143,6 +145,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = FC7024F82F3B6571007C6113 /* Build configuration list for PBXNativeTarget "AniTV" */;
 			buildPhases = (
+				FC7024FF2F3B6571007C6199 /* Generate Secrets */,
 				FC7024D12F3B656F007C6113 /* Sources */,
 				FC7024D22F3B656F007C6113 /* Frameworks */,
 				FC7024D32F3B656F007C6113 /* Resources */,
@@ -297,6 +300,30 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		FC7024FF2F3B6571007C6199 /* Generate Secrets */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/generate_secrets.py",
+				"$(SRCROOT)/AniTV/Secrets.plist",
+			);
+			name = "Generate Secrets";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/AniTV/Utils/GeneratedSecrets.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "python3 \"$SRCROOT/scripts/generate_secrets.py\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		FC7024D12F3B656F007C6113 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -373,7 +400,7 @@
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -438,7 +465,7 @@
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -464,18 +491,20 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AniTV/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "AniTV 使用本地 HTTP 服务来完成局域网二维码登录。";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = arm64;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.moyuwang.AniTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -494,18 +523,20 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4C2X8SG8TJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AniTV/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "AniTV 使用本地 HTTP 服务来完成局域网二维码登录。";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = arm64;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.moyuwang.AniTV;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

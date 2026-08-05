@@ -4,20 +4,6 @@
 <dict>
 	<key>BuildMachineOSBuild</key>
 	<string>25F71</string>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>zh-Hans</string>
-	<key>CFBundleExecutable</key>
-	<string>AniTV</string>
-	<key>CFBundleIdentifier</key>
-	<string>xyz.moyuwang.AniTV</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>AniTV</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>AppleTVOS</string>
@@ -35,8 +21,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleVersion</key>
-	<string>1</string>
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
@@ -53,8 +37,6 @@
 	<string>2650</string>
 	<key>DTXcodeBuild</key>
 	<string>17F42</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>MinimumOSVersion</key>
 	<string>26.2</string>
 	<key>NSAppTransportSecurity</key>
@@ -62,22 +44,9 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>AniTV 使用本地 HTTP 服务来完成局域网二维码登录。</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>3</integer>
 	</array>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UILaunchScreen</key>
-		<dict/>
-	</dict>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-	</array>
-	<key>UIUserInterfaceStyle</key>
-	<string>Automatic</string>
 </dict>
 </plist>
