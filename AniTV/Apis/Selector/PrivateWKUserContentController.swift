@@ -129,14 +129,20 @@ final class TVOSMediaResolver: NSObject {
             group.addTask {
                 try await withTaskCancellationHandler {
                     try await withCheckedThrowingContinuation { continuation in
-                        self.activeContinuation = continuation
-                        if let url = URL(string: pageUrl) {
-                            let request = URLRequest(url: url)
-                            print("⏳ 开始加载页面: \(pageUrl)")
-                            _ = self.webView?.perform(Selector(("loadRequest:")), with: request)
-                        } else {
-                            continuation.resume(throwing: URLError(.badURL))
-                            self.activeContinuation = nil
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self = self else {
+                                continuation.resume(throwing: CancellationError())
+                                return
+                            }
+                            self.activeContinuation = continuation
+                            if let url = URL(string: pageUrl) {
+                                let request = URLRequest(url: url)
+                                print("⏳ 开始加载页面: \(pageUrl)")
+                                _ = self.webView?.perform(Selector(("loadRequest:")), with: request)
+                            } else {
+                                continuation.resume(throwing: URLError(.badURL))
+                                self.activeContinuation = nil
+                            }
                         }
                     }
                 } onCancel: {
