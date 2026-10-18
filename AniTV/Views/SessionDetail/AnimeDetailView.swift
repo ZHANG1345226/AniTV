@@ -308,7 +308,7 @@ struct AnimeDetailView: View {
     }
 
     private var startDate: Date? {
-        guard let dateString = subject?.airtime.date else { return nil }
+        guard let dateString = subject?.date, !dateString.isEmpty else { return nil }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: dateString)

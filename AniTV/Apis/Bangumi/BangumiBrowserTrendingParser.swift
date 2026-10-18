@@ -40,7 +40,7 @@ enum BangumiBrowserTrendingParser {
             info: info,
             locked: false,
             nsfw: false,
-            rating: SubjectRating(rank: rank, count: [], score: score, total: ratingTotal),
+            rating: SubjectRating(rank: rank, count: [:], score: score, total: ratingTotal),
             images: SubjectImages(
                 large: imageURL,
                 common: imageURL,

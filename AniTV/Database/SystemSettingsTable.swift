@@ -12,6 +12,12 @@ import SQLiteData
 extension AniTVDatabase {
     nonisolated static let playbackCompletionThresholdSettingKey = "player.playback_completion_threshold"
     nonisolated static let defaultPlaybackCompletionThreshold = 0.9
+    nonisolated static let autoPlayNextSettingKey = "player.auto_play_next"
+    nonisolated static let defaultAutoPlayNext = true
+    nonisolated static let rememberDanmakuStateSettingKey = "player.remember_danmaku_state"
+    nonisolated static let defaultRememberDanmakuState = true
+    nonisolated static let playbackSearchConcurrencySettingKey = "media_source.search_concurrency"
+    nonisolated static let defaultPlaybackSearchConcurrency = 5
     nonisolated static let bangumiOAuthRedirectURISettingKey = "bangumi_oauth_redirect_uri"
     nonisolated static let bangumiOAuthRefreshBlockedSettingKey = "bangumi_oauth_refresh_blocked"
 
@@ -45,6 +51,30 @@ extension AniTVDatabase {
                 key: playbackCompletionThresholdSettingKey,
                 value: String(defaultPlaybackCompletionThreshold),
                 valueType: "double",
+                in: db
+            )
+        }
+        migrator.registerMigration("Seed playback search concurrency setting") { db in
+            try upsertSystemSetting(
+                key: playbackSearchConcurrencySettingKey,
+                value: String(defaultPlaybackSearchConcurrency),
+                valueType: "integer",
+                in: db
+            )
+        }
+        migrator.registerMigration("Seed auto play next setting") { db in
+            try upsertSystemSetting(
+                key: autoPlayNextSettingKey,
+                value: defaultAutoPlayNext ? "1" : "0",
+                valueType: "boolean",
+                in: db
+            )
+        }
+        migrator.registerMigration("Seed remember danmaku state setting") { db in
+            try upsertSystemSetting(
+                key: rememberDanmakuStateSettingKey,
+                value: defaultRememberDanmakuState ? "1" : "0",
+                valueType: "boolean",
                 in: db
             )
         }
@@ -98,6 +128,97 @@ extension AniTVDatabase {
             return defaultPlaybackCompletionThreshold
         }
         return threshold
+    }
+
+    nonisolated static func setPlaybackCompletionThreshold(
+        _ threshold: Double,
+        in database: any DatabaseWriter
+    ) async throws {
+        try await database.write { db in
+            try upsertSystemSetting(
+                key: playbackCompletionThresholdSettingKey,
+                value: String(threshold),
+                valueType: "double",
+                in: db
+            )
+        }
+    }
+
+    nonisolated static func playbackSearchConcurrency(
+        in database: any DatabaseWriter
+    ) async throws -> Int {
+        let value = try await systemSettingValue(
+            forKey: playbackSearchConcurrencySettingKey,
+            in: database
+        )
+        guard let value, let concurrency = Int(value), concurrency > 0 else {
+            return defaultPlaybackSearchConcurrency
+        }
+        return concurrency
+    }
+
+    nonisolated static func setPlaybackSearchConcurrency(
+        _ concurrency: Int,
+        in database: any DatabaseWriter
+    ) async throws {
+        try await database.write { db in
+            try upsertSystemSetting(
+                key: playbackSearchConcurrencySettingKey,
+                value: String(concurrency),
+                valueType: "integer",
+                in: db
+            )
+        }
+    }
+
+    nonisolated static func isAutoPlayNextEnabled(
+        in database: any DatabaseWriter
+    ) async throws -> Bool {
+        let value = try await systemSettingValue(
+            forKey: autoPlayNextSettingKey,
+            in: database
+        )
+        guard let value else { return defaultAutoPlayNext }
+        return value == "1"
+    }
+
+    nonisolated static func setAutoPlayNextEnabled(
+        _ enabled: Bool,
+        in database: any DatabaseWriter
+    ) async throws {
+        try await database.write { db in
+            try upsertSystemSetting(
+                key: autoPlayNextSettingKey,
+                value: enabled ? "1" : "0",
+                valueType: "boolean",
+                in: db
+            )
+        }
+    }
+
+    nonisolated static func isRememberDanmakuStateEnabled(
+        in database: any DatabaseWriter
+    ) async throws -> Bool {
+        let value = try await systemSettingValue(
+            forKey: rememberDanmakuStateSettingKey,
+            in: database
+        )
+        guard let value else { return defaultRememberDanmakuState }
+        return value == "1"
+    }
+
+    nonisolated static func setRememberDanmakuStateEnabled(
+        _ enabled: Bool,
+        in database: any DatabaseWriter
+    ) async throws {
+        try await database.write { db in
+            try upsertSystemSetting(
+                key: rememberDanmakuStateSettingKey,
+                value: enabled ? "1" : "0",
+                valueType: "boolean",
+                in: db
+            )
+        }
     }
 
     nonisolated static func bangumiOAuthRedirectURI(

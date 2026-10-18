@@ -354,12 +354,11 @@ struct BangumiRepository {
         )
     }
 
-    /// 获取条目
-    /// GET /p1/subjects/{subjectID}
+    /// 获取条目详情
+    /// GET /v0/subjects/{subjectID}
     func getSubject(subjectID: Int) async throws -> SubjectDetailDTO {
         try await client.request(
-            url: BangumiAPI.priv.build("p1/subjects/\(subjectID)"),
-            queryItems: []
+            url: BangumiAPI.pub.build("v0/subjects/\(subjectID)")
         )
     }
 

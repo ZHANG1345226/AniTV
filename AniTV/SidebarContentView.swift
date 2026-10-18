@@ -147,7 +147,7 @@ struct SidebarContentView: View {
                         onScreenDisappear: {
                             router.notifyPlayerDismissed()
                         },
-                        onExitCommandAction: {
+                        onExitRequest: {
                             router.pop()
                         }
                     )
@@ -264,7 +264,7 @@ private struct AnimeEpisodePlayerScreen: View {
     let sessionTitle: String
     let initialPlaybackPositionSeconds: Int?
     let onScreenDisappear: () -> Void
-    let onExitCommandAction: () -> Void
+    let onExitRequest: () -> Void
 
     @State private var currentEpisodeIndex: Int = 0
 
@@ -280,7 +280,8 @@ private struct AnimeEpisodePlayerScreen: View {
                     episodeInfo: currentEpisode,
                     sessionTitle: sessionTitle,
                     initialPlaybackPositionSeconds: currentEpisode.id == initialEpisodeID ? initialPlaybackPositionSeconds : nil,
-                    onPlaybackCompleted: playNextEpisodeIfPossible
+                    onPlaybackCompleted: playNextEpisodeIfPossible,
+                    onExitRequest: onExitRequest
                 )
                 .id(currentEpisode.id)
             } else {
@@ -292,9 +293,6 @@ private struct AnimeEpisodePlayerScreen: View {
         }
         .onDisappear {
             onScreenDisappear()
-        }
-        .onExitCommand {
-            onExitCommandAction()
         }
     }
 
@@ -369,7 +367,7 @@ private struct SidebarDetailView: View {
                     openAnimeDetail: openAnimeDetail
                 )
             case .settings:
-                SettingsPlaceholderView(columnVisibility: $columnVisibility)
+                SettingsView(columnVisibility: $columnVisibility)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

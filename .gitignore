@@ -2,3 +2,6 @@ scripts/output/
 AniTV.xcodeproj/xcuserdata/
 AniTV/Secrets.plist
 AniTV/Utils/GeneratedSecrets.swift
+build/
+.build/
+.DS_Store

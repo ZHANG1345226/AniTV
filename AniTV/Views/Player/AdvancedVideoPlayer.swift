@@ -11,13 +11,36 @@ import AVKit
 
 final class AniTVPlayerViewController: AVPlayerViewController {
     var onUpArrowWhenControlsVisible: (() -> Void)?
+    var onExitRequest: (() -> Void)?
     var shouldIgnoreUpArrow = false
+    var isSourcePanelPresented = false
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let isMenu = presses.contains(where: { $0.type == .menu })
+        let isUpArrow = presses.contains(where: { $0.type == .upArrow })
+
+        if isMenu {
+            if isSourcePanelPresented {
+                super.pressesEnded(presses, with: event)
+                return
+            }
+
+            if arePlaybackControlsLikelyVisible(in: view) {
+                super.pressesEnded(presses, with: event)
+                return
+            }
+
+            super.pressesEnded(presses, with: event)
+            DispatchQueue.main.async { [weak self] in
+                self?.onExitRequest?()
+            }
+            return
+        }
+
         super.pressesEnded(presses, with: event)
 
         guard !shouldIgnoreUpArrow else { return }
-        guard presses.contains(where: { $0.type == .upArrow }) else { return }
+        guard isUpArrow else { return }
         guard arePlaybackControlsLikelyVisible(in: view) else { return }
 
         DispatchQueue.main.async { [weak self] in
@@ -70,6 +93,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     @Binding var isSourcePanelPresented: Bool
     var danmuManager: DanmuViewManager?
     var isDanmakuAvailable: Bool = true
+    var onExitRequest: (() -> Void)? = nil
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
     var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
@@ -106,6 +130,9 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         controller.allowsPictureInPicturePlayback = true
         controller.appliesPreferredDisplayCriteriaAutomatically = false
         controller.showsPlaybackControls = !isSourcePanelPresented
+        controller.shouldIgnoreUpArrow = isSourcePanelPresented
+        controller.isSourcePanelPresented = isSourcePanelPresented
+        controller.onExitRequest = onExitRequest
         controller.onUpArrowWhenControlsVisible = {
             guard !isSourcePanelPresented else { return }
             isSourcePanelPresented = true
@@ -151,6 +178,8 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         if let controller = uiViewController as? AniTVPlayerViewController {
             uiViewController.showsPlaybackControls = !isSourcePanelPresented
             controller.shouldIgnoreUpArrow = isSourcePanelPresented
+            controller.isSourcePanelPresented = isSourcePanelPresented
+            controller.onExitRequest = onExitRequest
             controller.onUpArrowWhenControlsVisible = {
                 guard !isSourcePanelPresented else { return }
                 isSourcePanelPresented = true

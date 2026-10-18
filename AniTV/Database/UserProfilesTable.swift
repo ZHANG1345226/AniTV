@@ -87,6 +87,13 @@ extension AniTVDatabase {
         }
     }
 
+    static func logoutCurrentUser(in database: any DatabaseWriter) async throws {
+        try await database.write { db in
+            try db.execute(sql: "DELETE FROM user_profiles")
+        }
+        _ = try await insertGuestUserProfile(in: database)
+    }
+
     static func insertGuestUserProfile(in database: any DatabaseWriter) async throws -> UserProfile {
         let now = Date()
         let guestExpiry = Date(timeIntervalSince1970: 0)

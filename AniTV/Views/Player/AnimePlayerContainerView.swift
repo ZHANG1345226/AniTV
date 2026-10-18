@@ -168,18 +168,21 @@ struct AnimePlayerContainerView: View {
     let sessionTitle: String
     let initialPlaybackPositionSeconds: Int?
     var onPlaybackCompleted: (() -> Void)? = nil
+    var onExitRequest: (() -> Void)? = nil
     @State private var text = "正在解析番剧源..."
 
     init(
         episodeInfo: BgmEpisodeInfo,
         sessionTitle: String,
         initialPlaybackPositionSeconds: Int? = nil,
-        onPlaybackCompleted: (() -> Void)? = nil
+        onPlaybackCompleted: (() -> Void)? = nil,
+        onExitRequest: (() -> Void)? = nil
     ) {
         self.episodeInfo = episodeInfo
         self.sessionTitle = sessionTitle
         self.initialPlaybackPositionSeconds = initialPlaybackPositionSeconds
         self.onPlaybackCompleted = onPlaybackCompleted
+        self.onExitRequest = onExitRequest
     }
 
     var body: some View {
@@ -192,6 +195,7 @@ struct AnimePlayerContainerView: View {
                 isSourcePanelPresented: $isSourcePanelPresented,
                 danmuManager: danmuManager,
                 isDanmakuAvailable: isDanmakuAvailable,
+                onExitRequest: onExitRequest,
                 onSourceSelected: handleUserSelectedResource
             )
                 .ignoresSafeArea()
