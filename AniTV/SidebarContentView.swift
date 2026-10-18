@@ -74,9 +74,10 @@ struct SidebarContentView: View {
                                             )
                                     }
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 60)
                             .padding(.vertical, 6)
                             .animation(.easeInOut(duration: 0.22), value: isProfileButtonFocused)
                         }
@@ -114,8 +115,12 @@ struct SidebarContentView: View {
                         }
                         .prefersDefaultFocus(shouldPreferSidebarFocus && router.selectedCategory == .settings, in: sidebarFocusScope)
                         .focused($focusedCategory, equals: .settings)
-                    }.padding(.top, 60)
+                    } header: {
+                        Spacer()
+                            .frame(height: 8)
+                    }
                 }
+                .sidebarRowSpacing(12)
                 .focused($isSidebarFocused)
                 .focusScope(sidebarFocusScope)
             } detail: {
@@ -683,3 +688,15 @@ struct ProfileSwitcherView: View {
 #Preview {
     SidebarContentView()
 }
+
+private extension View {
+    @ViewBuilder
+    func sidebarRowSpacing(_ spacing: CGFloat) -> some View {
+        if #available(tvOS 27.0, *) {
+            self.listRowSpacing(spacing)
+        } else {
+            self
+        }
+    }
+}
+
