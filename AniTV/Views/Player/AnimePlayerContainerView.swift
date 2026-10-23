@@ -283,6 +283,7 @@ struct AnimePlayerContainerView: View {
             Task { @MainActor in
                 mediaResolver.cancelResolve()
             }
+            LocalHlsPlaybackPreparer.shared.stopCurrentSession()
             lastPlaybackPosition = nil
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -388,7 +389,9 @@ struct AnimePlayerContainerView: View {
             }
                         
             
-            let playerItem = AVPlayerItem(url: URL(string: link.m3u8Url)!)
+            let prepared = await LocalHlsPlaybackPreparer.shared.prepare(url: link.m3u8Url, headers: link.headers)
+            print("🎬 播放目标 URL: \(prepared.playUrl)")
+            let playerItem = AVPlayerItem(url: prepared.playUrl)
             playerItem.externalMetadata = createMetadata()
             
             // 💥 2. 把返回的监听器赋值给 State 变量
@@ -648,6 +651,7 @@ struct AnimePlayerContainerView: View {
 
     private func cleanup() {
         print("🧹 Cleaning up AnimePlayerContainerView...")
+        LocalHlsPlaybackPreparer.shared.stopCurrentSession()
         timeControlStatusObservation?.invalidate()
         timeControlStatusObservation = nil
 

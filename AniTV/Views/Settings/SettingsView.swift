@@ -46,6 +46,7 @@ struct SettingsView: View {
     @State private var completionThreshold: Double = 0.9
     @State private var isAutoPlayNext: Bool = true
     @State private var isRememberDanmakuState: Bool = true
+    @State private var isHlsAdFilterEnabled: Bool = LocalHlsPlaybackPreparer.isEnabled
     @State private var subscriptionURLString: String = MediaSourceConfigLoader.defaultSubscriptionURL.absoluteString
 
     private enum BangumiOAuthConfig {
@@ -212,11 +213,12 @@ struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 480)
-                        .id(selectedSubpage?.rawValue ?? "home_hint")
+                        .id(hint)
                         .transition(.opacity)
                 }
             }
             .frame(width: 540, height: 80, alignment: .top)
+            .animation(.easeInOut(duration: 0.2), value: currentLeftHint)
 
             Spacer()
         }
@@ -245,12 +247,20 @@ struct SettingsView: View {
     }
 
     private var currentLeftHint: String? {
-        switch selectedSubpage {
-        case .developerOptions:
-            return "开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上"
-        default:
-            return nil
+        if let item = focusedSubpageItem {
+            switch item {
+            case "developer_debug":
+                return "开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上"
+            case "player_ad_filter":
+                return "自动识别并跳过 m3u8 视频源中插入的切片广告"
+            default:
+                return nil
+            }
         }
+        if selectedSubpage == .developerOptions {
+            return "开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上"
+        }
+        return nil
     }
 
     // Home Left Illustration (Gear)
@@ -459,6 +469,7 @@ struct SettingsView: View {
                         .padding(.horizontal, 28)
                         .frame(height: 76)
                     }
+                    .focused($focusedSubpageItem, equals: "profile_username")
                 }
 
                 SettingsRowButton {
@@ -538,6 +549,25 @@ struct SettingsView: View {
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
+            .focused($focusedSubpageItem, equals: "player_autoplay")
+
+            SettingsRowButton {
+                isHlsAdFilterEnabled.toggle()
+                LocalHlsPlaybackPreparer.isEnabled = isHlsAdFilterEnabled
+            } label: {
+                HStack {
+                    Text("过滤切片广告 (实验性)")
+                        .font(.headline.weight(.medium))
+
+                    Spacer()
+
+                    Text(isHlsAdFilterEnabled ? "是" : "否")
+                        .font(.headline.weight(.semibold))
+                }
+                .padding(.horizontal, 28)
+                .frame(height: 76)
+            }
+            .focused($focusedSubpageItem, equals: "player_ad_filter")
 
             Text("弹幕")
                 .font(.body)
@@ -562,6 +592,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
+            .focused($focusedSubpageItem, equals: "danmaku_remember_state")
         }
     }
 
@@ -604,6 +635,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
+            .focused($focusedSubpageItem, equals: "datasource_subscription")
         }
     }
 
@@ -668,6 +700,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
+            .focused($focusedSubpageItem, equals: "about_version")
         }
     }
 
@@ -679,6 +712,7 @@ struct SettingsView: View {
             completionThreshold = try await AniTVDatabase.playbackCompletionThreshold(in: database)
             isAutoPlayNext = try await AniTVDatabase.isAutoPlayNextEnabled(in: database)
             isRememberDanmakuState = try await AniTVDatabase.isRememberDanmakuStateEnabled(in: database)
+            isHlsAdFilterEnabled = LocalHlsPlaybackPreparer.isEnabled
         } catch {
             print("[SettingsView] Failed to load settings: \(error)")
         }
