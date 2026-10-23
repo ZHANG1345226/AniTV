@@ -16,6 +16,8 @@ extension AniTVDatabase {
     nonisolated static let defaultAutoPlayNext = true
     nonisolated static let rememberDanmakuStateSettingKey = "player.remember_danmaku_state"
     nonisolated static let defaultRememberDanmakuState = true
+    nonisolated static let lastDanmakuEnabledSettingKey = "player.last_danmaku_enabled"
+    nonisolated static let defaultLastDanmakuEnabled = true
     nonisolated static let playbackSearchConcurrencySettingKey = "media_source.search_concurrency"
     nonisolated static let defaultPlaybackSearchConcurrency = 5
     nonisolated static let bangumiOAuthRedirectURISettingKey = "bangumi_oauth_redirect_uri"
@@ -74,6 +76,14 @@ extension AniTVDatabase {
             try upsertSystemSetting(
                 key: rememberDanmakuStateSettingKey,
                 value: defaultRememberDanmakuState ? "1" : "0",
+                valueType: "boolean",
+                in: db
+            )
+        }
+        migrator.registerMigration("Seed last danmaku enabled setting") { db in
+            try upsertSystemSetting(
+                key: lastDanmakuEnabledSettingKey,
+                value: defaultLastDanmakuEnabled ? "1" : "0",
                 valueType: "boolean",
                 in: db
             )
@@ -211,6 +221,7 @@ extension AniTVDatabase {
         _ enabled: Bool,
         in database: any DatabaseWriter
     ) async throws {
+        UserDefaults.standard.set(enabled, forKey: rememberDanmakuStateSettingKey)
         try await database.write { db in
             try upsertSystemSetting(
                 key: rememberDanmakuStateSettingKey,
@@ -218,6 +229,69 @@ extension AniTVDatabase {
                 valueType: "boolean",
                 in: db
             )
+        }
+    }
+
+    nonisolated static func isLastDanmakuEnabled(
+        in database: any DatabaseWriter
+    ) async throws -> Bool {
+        let value = try await systemSettingValue(
+            forKey: lastDanmakuEnabledSettingKey,
+            in: database
+        )
+        guard let value else { return defaultLastDanmakuEnabled }
+        return value == "1"
+    }
+
+    nonisolated static func setLastDanmakuEnabled(
+        _ enabled: Bool,
+        in database: any DatabaseWriter
+    ) async throws {
+        UserDefaults.standard.set(enabled, forKey: lastDanmakuEnabledSettingKey)
+        try await database.write { db in
+            try upsertSystemSetting(
+                key: lastDanmakuEnabledSettingKey,
+                value: enabled ? "1" : "0",
+                valueType: "boolean",
+                in: db
+            )
+        }
+    }
+
+    nonisolated static func resolvedInitialDanmakuEnabled() -> Bool {
+        let shouldRemember: Bool
+        if let stored = UserDefaults.standard.object(forKey: rememberDanmakuStateSettingKey) as? Bool {
+            shouldRemember = stored
+        } else {
+            shouldRemember = defaultRememberDanmakuState
+        }
+
+        guard shouldRemember else { return true }
+
+        if let storedState = UserDefaults.standard.object(forKey: lastDanmakuEnabledSettingKey) as? Bool {
+            return storedState
+        }
+        return defaultLastDanmakuEnabled
+    }
+
+    nonisolated static func persistDanmakuStateIfRememberEnabled(
+        _ enabled: Bool,
+        in database: (any DatabaseWriter)?
+    ) {
+        let shouldRemember: Bool
+        if let stored = UserDefaults.standard.object(forKey: rememberDanmakuStateSettingKey) as? Bool {
+            shouldRemember = stored
+        } else {
+            shouldRemember = defaultRememberDanmakuState
+        }
+
+        guard shouldRemember else { return }
+
+        UserDefaults.standard.set(enabled, forKey: lastDanmakuEnabledSettingKey)
+        if let database {
+            Task {
+                try? await setLastDanmakuEnabled(enabled, in: database)
+            }
         }
     }
 

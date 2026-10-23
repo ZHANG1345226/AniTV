@@ -170,4 +170,23 @@ struct AniTVTests {
         #expect(result.status == .unchanged)
         #expect(result.reason == "encrypted_implicit_iv")
     }
+
+    @Test func rememberDanmakuStateLogic() async throws {
+        // 1. When remember is true, resolve follows lastDanmakuEnabled
+        AniTVDatabase.persistDanmakuStateIfRememberEnabled(false, in: nil)
+        UserDefaults.standard.set(true, forKey: AniTVDatabase.rememberDanmakuStateSettingKey)
+        #expect(AniTVDatabase.resolvedInitialDanmakuEnabled() == false)
+
+        AniTVDatabase.persistDanmakuStateIfRememberEnabled(true, in: nil)
+        #expect(AniTVDatabase.resolvedInitialDanmakuEnabled() == true)
+
+        // 2. When remember is false, resolve is always true regardless of last saved state
+        AniTVDatabase.persistDanmakuStateIfRememberEnabled(false, in: nil)
+        UserDefaults.standard.set(false, forKey: AniTVDatabase.rememberDanmakuStateSettingKey)
+        #expect(AniTVDatabase.resolvedInitialDanmakuEnabled() == true)
+
+        // Reset to default
+        UserDefaults.standard.set(true, forKey: AniTVDatabase.rememberDanmakuStateSettingKey)
+        UserDefaults.standard.set(true, forKey: AniTVDatabase.lastDanmakuEnabledSettingKey)
+    }
 }

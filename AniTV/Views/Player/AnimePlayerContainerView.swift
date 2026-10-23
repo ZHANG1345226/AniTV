@@ -196,6 +196,9 @@ struct AnimePlayerContainerView: View {
                 danmuManager: danmuManager,
                 isDanmakuAvailable: isDanmakuAvailable,
                 onExitRequest: onExitRequest,
+                onDanmakuToggled: { newEnabled in
+                    AniTVDatabase.persistDanmakuStateIfRememberEnabled(newEnabled, in: database)
+                },
                 onSourceSelected: handleUserSelectedResource
             )
                 .ignoresSafeArea()

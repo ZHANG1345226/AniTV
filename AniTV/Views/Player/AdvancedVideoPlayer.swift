@@ -94,6 +94,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
     var danmuManager: DanmuViewManager?
     var isDanmakuAvailable: Bool = true
     var onExitRequest: (() -> Void)? = nil
+    var onDanmakuToggled: ((Bool) -> Void)? = nil
     
     // 选中的线路回调（如果需要通知外部去切换 m3u8）
     var onSourceSelected: ((Int, Int, VideoResource) -> Void)?
@@ -103,7 +104,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
         let sourcePanelModel = SourceSwitchPanelModel()
         var detailsHostingController: UIHostingController<AniTVCustomDropdownView>?
         weak var currentDanmuManager: DanmuViewManager?
-        var isDanmakuEnabled: Bool = true
+        var isDanmakuEnabled: Bool = AniTVDatabase.resolvedInitialDanmakuEnabled()
         var selectedDisplayArea: CGFloat = 1.0
     }
     
@@ -204,6 +205,7 @@ struct AdvancedVideoPlayer: UIViewControllerRepresentable {
             context.coordinator.isDanmakuEnabled.toggle()
             let newEnabled = context.coordinator.isDanmakuEnabled
             danmuManager?.isEnabled = newEnabled
+            onDanmakuToggled?(newEnabled)
             uiViewController.transportBarCustomMenuItems = [
                 getSourcePanelAction(),
                 getPipAction(context: context),

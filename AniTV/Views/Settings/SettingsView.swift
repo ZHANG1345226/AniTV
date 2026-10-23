@@ -253,6 +253,8 @@ struct SettingsView: View {
                 return "开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上"
             case "player_ad_filter":
                 return "自动识别并跳过 m3u8 视频源中插入的切片广告"
+            case "danmaku_remember_state":
+                return "开启后，播放器将记住弹幕开关状态并在下次播放时恢复"
             default:
                 return nil
             }
@@ -712,6 +714,7 @@ struct SettingsView: View {
             completionThreshold = try await AniTVDatabase.playbackCompletionThreshold(in: database)
             isAutoPlayNext = try await AniTVDatabase.isAutoPlayNextEnabled(in: database)
             isRememberDanmakuState = try await AniTVDatabase.isRememberDanmakuStateEnabled(in: database)
+            UserDefaults.standard.set(isRememberDanmakuState, forKey: AniTVDatabase.rememberDanmakuStateSettingKey)
             isHlsAdFilterEnabled = LocalHlsPlaybackPreparer.isEnabled
         } catch {
             print("[SettingsView] Failed to load settings: \(error)")
