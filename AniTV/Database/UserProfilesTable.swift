@@ -92,12 +92,15 @@ extension AniTVDatabase {
             try db.execute(sql: "DELETE FROM user_profiles")
         }
         _ = try await insertGuestUserProfile(in: database)
+        await MainActor.run {
+            NotificationCenter.default.post(name: .userProfileDidChange, object: nil)
+        }
     }
 
     static func insertGuestUserProfile(in database: any DatabaseWriter) async throws -> UserProfile {
         let now = Date()
         let guestExpiry = Date(timeIntervalSince1970: 0)
-        return try await database.write { db in
+        let profile = try await database.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO "user_profiles" (
@@ -143,6 +146,10 @@ extension AniTVDatabase {
 
             return profile
         }
+        await MainActor.run {
+            NotificationCenter.default.post(name: .userProfileDidChange, object: nil)
+        }
+        return profile
     }
 
     static func upsertCurrentUserProfile(
@@ -157,7 +164,7 @@ extension AniTVDatabase {
         in database: any DatabaseWriter
     ) async throws -> UserProfile {
         let now = Date()
-        return try await database.write { db in
+        let profile = try await database.write { db in
             if let current = try #sql(
                 """
                 SELECT *
@@ -259,5 +266,9 @@ extension AniTVDatabase {
 
             return inserted
         }
+        await MainActor.run {
+            NotificationCenter.default.post(name: .userProfileDidChange, object: nil)
+        }
+        return profile
     }
 }

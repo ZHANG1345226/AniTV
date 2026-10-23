@@ -171,6 +171,11 @@ struct SidebarContentView: View {
         .task {
             await loadCurrentProfile()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .userProfileDidChange)) { _ in
+            Task {
+                await loadCurrentProfile()
+            }
+        }
         .onChange(of: router.selectedCategory) { _, newValue in
             if router.columnVisibility != .detailOnly {
                 focusedCategory = newValue
@@ -247,6 +252,7 @@ private struct SidebarUserAvatarView: View {
                         defaultAvatar
                     }
                 }
+                .id(url)
             } else {
                 defaultAvatar
             }

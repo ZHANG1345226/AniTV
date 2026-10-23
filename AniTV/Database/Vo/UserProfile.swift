@@ -64,3 +64,7 @@ nonisolated struct UserProfile: Equatable, Identifiable {
         return nickname
     }
 }
+
+extension Notification.Name {
+    static let userProfileDidChange = Notification.Name("AniTV.userProfileDidChange")
+}

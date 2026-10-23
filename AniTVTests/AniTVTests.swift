@@ -19,8 +19,9 @@ struct AniTVTests {
         let database = try AniTVDatabase.makeDefaultDatabase()
 
         if try await AniTVDatabase.isBangumiDataEmpty(in: database) {
-            let items = try await AniTVDatabase.downloadBangumiData()
-            try await AniTVDatabase.replaceBangumiData(items, in: database)
+            let release = try await AniTVDatabase.resolveBangumiDataRelease()
+            let items = try await AniTVDatabase.downloadBangumiData(from: release.url)
+            try await AniTVDatabase.replaceBangumiData(items, version: release.version, in: database)
         }
 
         let service = TimelineService()

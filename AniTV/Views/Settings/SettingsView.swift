@@ -10,6 +10,7 @@ import CoreImage.CIFilterBuiltins
 import SQLiteData
 
 enum SettingsSubpage: String, CaseIterable, Identifiable {
+    case profile = "个人资料"
     case playerAndDanmaku = "播放器与弹幕"
     case dataSource = "数据源"
     case developerOptions = "开发者选项"
@@ -23,12 +24,20 @@ struct SettingsView: View {
     @EnvironmentObject private var bangumiOAuthManager: BangumiOAuthManager
     @Dependency(\.defaultDatabase) private var database
     @Namespace private var rightListFocusScope
+    @FocusState private var focusedMainMenuSubpage: SettingsSubpage?
+    @FocusState private var focusedSubpageItem: String?
+
+    // Left panel illustration opacity constant (75%)
+    private static let leftIllustrationOpacity: Double = 0.75
 
     init(columnVisibility: Binding<NavigationSplitViewVisibility> = .constant(.detailOnly)) {
         self._columnVisibility = columnVisibility
     }
 
     @State private var selectedSubpage: SettingsSubpage? = nil
+    @State private var lastSelectedSubpage: SettingsSubpage? = nil
+    @State private var showingLoginSheet: Bool = false
+    @State private var showingLogoutConfirmation: Bool = false
     @State private var currentProfile: UserProfile? = nil
     @State private var isDebugRenderEnabled: Bool = TVOSMediaResolver.isDebugRenderEnabled
 
@@ -47,6 +56,21 @@ struct SettingsView: View {
 
     private var currentTitle: String {
         selectedSubpage?.rawValue ?? "设置"
+    }
+
+    private func defaultFocusItem(for subpage: SettingsSubpage) -> String {
+        switch subpage {
+        case .profile:
+            return currentProfile?.isAuthenticated == true ? "profile_logout" : "profile_login"
+        case .playerAndDanmaku:
+            return "player_threshold"
+        case .dataSource:
+            return "datasource_concurrency"
+        case .developerOptions:
+            return "developer_debug"
+        case .about:
+            return "about_repo"
+        }
     }
 
     var body: some View {
@@ -68,23 +92,88 @@ struct SettingsView: View {
             .padding(.bottom, 60)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Color.black.opacity(0.2)
-        )
+//        .background(
+//            Color.black.opacity(0.2)
+//        )
         .ignoresSafeArea()
         .task {
             await loadSettings()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .userProfileDidChange)) { _ in
+            Task {
+                await loadSettings()
+            }
+        }
         .onExitCommand {
             if selectedSubpage != nil {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                let target = lastSelectedSubpage ?? .profile
+                focusedSubpageItem = nil
+                withAnimation(.easeInOut(duration: 0.28)) {
                     selectedSubpage = nil
                 }
+                focusedMainMenuSubpage = target
             } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAnimation(.easeInOut(duration: 0.28)) {
                     columnVisibility = .all
                 }
             }
+        }
+        .onChange(of: selectedSubpage) { _, newSubpage in
+            if let newSubpage {
+                focusedMainMenuSubpage = nil
+                focusedSubpageItem = defaultFocusItem(for: newSubpage)
+            }
+        }
+        .fullScreenCover(isPresented: $showingLoginSheet) {
+            OOBEProfileSetupView(
+                isAuthenticating: bangumiOAuthManager.isAuthenticating,
+                statusMessage: bangumiOAuthManager.statusMessage,
+                lanEntryURL: bangumiOAuthManager.lanEntryURL,
+                lanServiceStatus: bangumiOAuthManager.lanServiceStatus,
+                createGuestAction: {
+                    Task {
+                        _ = try? await AniTVDatabase.insertGuestUserProfile(in: database)
+                        await loadSettings()
+                        showingLoginSheet = false
+                    }
+                },
+                connectBangumiAction: {
+                    bangumiOAuthManager.startLogin(
+                        clientID: BangumiOAuthConfig.clientID,
+                        clientSecret: BangumiOAuthConfig.secret,
+                        redirectURI: BangumiOAuthConfig.appCallbackURL
+                    )
+                },
+                onDismiss: {
+                    showingLoginSheet = false
+                }
+            )
+        }
+        .onChange(of: showingLoginSheet) { _, isShowing in
+            if !isShowing {
+                Task {
+                    await loadSettings()
+                }
+            }
+        }
+        .onChange(of: bangumiOAuthManager.authenticatedSession) { _, session in
+            if session != nil {
+                showingLoginSheet = false
+                Task {
+                    await loadSettings()
+                }
+            }
+        }
+        .alert("退出登录", isPresented: $showingLogoutConfirmation) {
+            Button("退出登录", role: .destructive) {
+                Task {
+                    try? await AniTVDatabase.logoutCurrentUser(in: database)
+                    await loadSettings()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要退出当前账号吗？")
         }
     }
 
@@ -102,277 +191,307 @@ struct SettingsView: View {
         .padding(.bottom, 30)
     }
 
-    // MARK: - Left Panel Views (Centered horizontally, shifted upwards, 2x enlarged)
+    // MARK: - Left Panel Views (Consistent illustration size & position with crossfade)
     @ViewBuilder
     private var leftPanelView: some View {
-        VStack(alignment: .center, spacing: 24) {
-            Spacer().frame(height: 10)
+        VStack(spacing: 24) {
+            // Fixed-size illustration container
+            ZStack {
+                currentLeftIllustration
+                    .opacity(Self.leftIllustrationOpacity)
+                    .id(selectedSubpage?.rawValue ?? "home_illustration")
+                    .transition(.opacity)
+            }
+            .frame(width: 540, height: 380)
 
-            if let subpage = selectedSubpage {
-                switch subpage {
-                case .playerAndDanmaku:
-                    playerAndDanmakuLeftIllustration
-                case .dataSource:
-                    dataSourceLeftIllustration
-                case .developerOptions:
-                    developerOptionsLeftIllustration
-                case .about:
-                    aboutLeftIllustration
-                }
-            } else {
-                if let profile = currentProfile, profile.isAuthenticated {
-                    userProfileCard(profile: profile)
-                } else {
-                    unauthenticatedLoginCard
+            // Fixed-size hint container so the icon above never jumps
+            ZStack(alignment: .top) {
+                if let hint = currentLeftHint {
+                    Text(hint)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 480)
+                        .id(selectedSubpage?.rawValue ?? "home_hint")
+                        .transition(.opacity)
                 }
             }
+            .frame(width: 540, height: 80, alignment: .top)
 
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .padding(.top, 90)
     }
 
-    // Authenticated User Left Card (2x enlarged, pill button)
-    private func userProfileCard(profile: UserProfile) -> some View {
-        VStack(spacing: 32) {
-            ZStack {
-                Circle()
-                    .stroke(.white, lineWidth: 20)
-                    .frame(width: 520, height: 520)
-
-                if let avatarURLString = profile.effectiveAvatar, let url = URL(string: avatarURLString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        default:
-                            defaultAvatarImage
-                        }
-                    }
-                    .frame(width: 480, height: 480)
-                    .clipShape(Circle())
-                } else {
-                    defaultAvatarImage
-                        .frame(width: 480, height: 480)
-                        .clipShape(Circle())
-                }
+    @ViewBuilder
+    private var currentLeftIllustration: some View {
+        if let subpage = selectedSubpage {
+            switch subpage {
+            case .profile:
+                profileLeftIllustration
+            case .playerAndDanmaku:
+                playerAndDanmakuLeftIllustration
+            case .dataSource:
+                dataSourceLeftIllustration
+            case .developerOptions:
+                developerOptionsLeftIllustration
+            case .about:
+                aboutLeftIllustration
             }
-
-            if let nickname = profile.nickname, !nickname.isEmpty {
-                Text(nickname)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
-
-            SettingsPillButton {
-                Task {
-                    try? await AniTVDatabase.logoutCurrentUser(in: database)
-                    await loadSettings()
-                }
-            } label: {
-                Text("登出")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 280, height: 68)
-                    .background(Color.white)
-                    .clipShape(Capsule())
-            }
+        } else {
+            homeLeftIllustration
         }
     }
 
-    private var defaultAvatarImage: some View {
-        Image(systemName: "person.crop.circle.fill")
+    private var currentLeftHint: String? {
+        switch selectedSubpage {
+        case .developerOptions:
+            return "开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上"
+        default:
+            return nil
+        }
+    }
+
+    // Home Left Illustration (Gear)
+    private var homeLeftIllustration: some View {
+        Image(systemName: "gear")
             .resizable()
             .scaledToFit()
+            .frame(width: 360, height: 360)
             .foregroundStyle(.white)
     }
 
-    // Unauthenticated QR & Login Left Card (2x enlarged, pill button)
-    private var unauthenticatedLoginCard: some View {
-        VStack(spacing: 24) {
-            LANLoginQRCodeView(urlString: bangumiOAuthManager.lanEntryURL)
-                .frame(width: 520, height: 520)
-                .background(.white, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-
-            SettingsPillButton {
-                bangumiOAuthManager.startLogin(
-                    clientID: BangumiOAuthConfig.clientID,
-                    clientSecret: BangumiOAuthConfig.secret,
-                    redirectURI: BangumiOAuthConfig.appCallbackURL
-                )
-            } label: {
-                Text("用 Apple 设备登录")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 360, height: 68)
-                    .background(Color.white)
-                    .clipShape(Capsule())
-            }
-            .disabled(bangumiOAuthManager.isAuthenticating)
-
-            VStack(spacing: 6) {
-                Text("扫描二维码或访问")
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.7))
-
-                Text(bangumiOAuthManager.lanEntryURL.isEmpty ? "http://局域网地址/path" : bangumiOAuthManager.lanEntryURL)
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-            }
-        }
+    // Profile Left Illustration (Person)
+    private var profileLeftIllustration: some View {
+        Image(systemName: "person")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 360, height: 360)
+            .foregroundStyle(.white)
     }
 
-    // Subpage Left Illustrations (2x enlarged)
+    // Subpage Left Illustrations
     private var playerAndDanmakuLeftIllustration: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             ZStack {
-                RoundedRectangle(cornerRadius: 64, style: .continuous)
-                    .stroke(.white, lineWidth: 24)
-                    .frame(width: 640, height: 420)
+                RoundedRectangle(cornerRadius: 48, style: .continuous)
+                    .stroke(.white, lineWidth: 20)
+                    .frame(width: 460, height: 300)
 
                 Image(systemName: "play.fill")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 180, height: 180)
+                    .frame(width: 120, height: 120)
                     .foregroundStyle(.white)
-                    .offset(x: 12)
+                    .offset(x: 8)
             }
 
             Capsule()
                 .fill(.white)
-                .frame(width: 280, height: 32)
+                .frame(width: 220, height: 24)
         }
+        .frame(width: 540, height: 380)
     }
 
     private var dataSourceLeftIllustration: some View {
-        VStack(spacing: 24) {
-            // Filmstrip icon (2x enlarged)
-            HStack(spacing: 40) {
-                VStack(spacing: 32) {
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: 280, height: 40)
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: 200, height: 40)
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: 200, height: 40)
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: 200, height: 40)
+        HStack(spacing: 32) {
+            VStack(spacing: 24) {
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 200, height: 32)
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 150, height: 32)
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 150, height: 32)
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 150, height: 32)
+            }
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 28)
+                    .stroke(.white, lineWidth: 18)
+                    .frame(width: 240, height: 260)
+
+                VStack(spacing: 20) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(.white.opacity(0.8))
+                        .frame(width: 140, height: 80)
+
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(.white.opacity(0.8))
+                        .frame(width: 140, height: 80)
                 }
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32)
-                        .stroke(.white, lineWidth: 20)
-                        .frame(width: 300, height: 320)
-
-                    VStack(spacing: 24) {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white.opacity(0.8))
-                            .frame(width: 180, height: 100)
-
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white.opacity(0.8))
-                            .frame(width: 180, height: 100)
-                    }
-
-                    // Sprocket holes along left and right (2x enlarged)
-                    VStack(spacing: 16) {
-                        ForEach(0..<4) { _ in
-                            HStack(spacing: 248) {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(.white)
-                                    .frame(width: 24, height: 24)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(.white)
-                                    .frame(width: 24, height: 24)
-                            }
+                // Sprocket holes along left and right
+                VStack(spacing: 12) {
+                    ForEach(0..<4) { _ in
+                        HStack(spacing: 196) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(.white)
+                                .frame(width: 20, height: 20)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(.white)
+                                .frame(width: 20, height: 20)
                         }
                     }
                 }
             }
         }
+        .frame(width: 540, height: 380)
     }
 
     private var developerOptionsLeftIllustration: some View {
-        VStack(spacing: 24) {
-            Text("{ }")
-                .font(.system(size: 320, weight: .light, design: .rounded))
-                .foregroundStyle(.white)
-
-            Text("开启后，解析 m3u8 时会将后台的 WKWebView 全屏渲染在屏幕上")
-                .font(.body)
-                .foregroundStyle(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 480)
-        }
+        Text("{ }")
+            .font(.system(size: 320, weight: .light, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: 360, height: 360)
     }
 
     private var aboutLeftIllustration: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "info.circle")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 360, height: 360)
-                .foregroundStyle(.white)
-
-            Text("AniTV V0.2.0")
-                .font(.title2.weight(.medium))
-                .foregroundStyle(.white)
-        }
+        Image(systemName: "info.circle")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 360, height: 360)
+            .foregroundStyle(.white)
     }
 
     // MARK: - Right Panel Views (FocusGuide enabled)
     @ViewBuilder
     private var rightPanelView: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if let subpage = selectedSubpage {
-                switch subpage {
-                case .playerAndDanmaku:
-                    playerAndDanmakuSettingsOptions
-                case .dataSource:
-                    dataSourceSettingsOptions
-                case .developerOptions:
-                    developerOptionsSettingsOptions
-                case .about:
-                    aboutSettingsOptions
-                }
-            } else {
-                mainSettingsNavigationMenu
-            }
+        ZStack(alignment: .topLeading) {
+            mainSettingsNavigationMenu
+                .offset(x: selectedSubpage == nil ? 0 : -100)
+                .opacity(selectedSubpage == nil ? 1 : 0)
+                .allowsHitTesting(selectedSubpage == nil)
+                .disabled(selectedSubpage != nil)
 
-            Spacer()
+            if let subpage = selectedSubpage {
+                subpageView(for: subpage)
+                    .defaultFocus($focusedSubpageItem, defaultFocusItem(for: subpage), priority: .userInitiated)
+                    .transition(
+                        .asymmetric(
+                            insertion: .offset(x: 100).combined(with: .opacity),
+                            removal: .offset(x: 100).combined(with: .opacity)
+                        )
+                    )
+                    .id("subpage_\(subpage.rawValue)")
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .focusScope(rightListFocusScope)
         .focusSection()
     }
 
-    // Main Navigation Menu (4 categories)
+    @ViewBuilder
+    private func subpageView(for subpage: SettingsSubpage) -> some View {
+        switch subpage {
+        case .profile:
+            profileSettingsOptions
+        case .playerAndDanmaku:
+            playerAndDanmakuSettingsOptions
+        case .dataSource:
+            dataSourceSettingsOptions
+        case .developerOptions:
+            developerOptionsSettingsOptions
+        case .about:
+            aboutSettingsOptions
+        }
+    }
+
+    // Main Navigation Menu (5 categories)
     private var mainSettingsNavigationMenu: some View {
         VStack(spacing: 16) {
-            ForEach(Array(SettingsSubpage.allCases.enumerated()), id: \.element.id) { index, subpage in
-                SettingsRowButton {
-                    withAnimation(.easeInOut(duration: 0.25)) {
+            ForEach(SettingsSubpage.allCases) { subpage in
+                Button {
+                    lastSelectedSubpage = subpage
+                    focusedMainMenuSubpage = nil
+                    focusedSubpageItem = defaultFocusItem(for: subpage)
+                    withAnimation(.easeInOut(duration: 0.28)) {
                         selectedSubpage = subpage
                     }
                 } label: {
+                    SettingsRowContent {
+                        HStack {
+                            Text(subpage.rawValue)
+                                .font(.headline.weight(.medium))
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .padding(.horizontal, 28)
+                        .frame(height: 76)
+                    }
+                }
+                .buttonStyle(CleanButtonStyle())
+                .focused($focusedMainMenuSubpage, equals: subpage)
+            }
+        }
+        .defaultFocus($focusedMainMenuSubpage, lastSelectedSubpage ?? .profile, priority: selectedSubpage == nil ? .userInitiated : .automatic)
+    }
+
+    // Subpage: Profile
+    @ViewBuilder
+    private var profileSettingsOptions: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let profile = currentProfile, profile.isAuthenticated {
+                Text("账号信息")
+                    .font(.body)
+                    .foregroundStyle(.white.opacity(0.6))
+
+                if let nickname = profile.nickname, !nickname.isEmpty {
+                    SettingsRowButton {
+                    } label: {
+                        HStack {
+                            Text("用户名")
+                                .font(.headline.weight(.medium))
+
+                            Spacer()
+
+                            Text(nickname)
+                                .font(.headline.weight(.semibold))
+                        }
+                        .padding(.horizontal, 28)
+                        .frame(height: 76)
+                    }
+                }
+
+                SettingsRowButton {
+                    showingLogoutConfirmation = true
+                } label: {
                     HStack {
-                        Text(subpage.rawValue)
-                            .font(.title3.weight(.medium))
+                        Text("退出登录")
+                            .font(.headline.weight(.medium))
 
                         Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 18, weight: .semibold))
                     }
                     .padding(.horizontal, 28)
                     .frame(height: 76)
                 }
-                .prefersDefaultFocus(index == 0, in: rightListFocusScope)
+                .focused($focusedSubpageItem, equals: "profile_logout")
+            } else {
+                Text("账号状态")
+                    .font(.body)
+                    .foregroundStyle(.white.opacity(0.6))
+
+                SettingsRowButton {
+                    showingLoginSheet = true
+                } label: {
+                    HStack {
+                        Text("登录")
+                            .font(.headline.weight(.medium))
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 28)
+                    .frame(height: 76)
+                }
+                .focused($focusedSubpageItem, equals: "profile_login")
             }
         }
     }
@@ -389,17 +508,17 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("自动标记为看过")
-                        .font(.title3.weight(.medium))
+                        .font(.headline.weight(.medium))
 
                     Spacer()
 
                     Text("\(Int(completionThreshold * 100))%")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                 }
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
-            .prefersDefaultFocus(true, in: rightListFocusScope)
+            .focused($focusedSubpageItem, equals: "player_threshold")
 
             SettingsRowButton {
                 isAutoPlayNext.toggle()
@@ -409,12 +528,12 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("自动连播")
-                        .font(.title3.weight(.medium))
+                        .font(.headline.weight(.medium))
 
                     Spacer()
 
                     Text(isAutoPlayNext ? "是" : "否")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                 }
                 .padding(.horizontal, 28)
                 .frame(height: 76)
@@ -433,12 +552,12 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("记住弹幕开关状态")
-                        .font(.title3.weight(.medium))
+                        .font(.headline.weight(.medium))
 
                     Spacer()
 
                     Text(isRememberDanmakuState ? "是" : "否")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                 }
                 .padding(.horizontal, 28)
                 .frame(height: 76)
@@ -454,17 +573,17 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("播放查询并发数")
-                        .font(.title3.weight(.medium))
+                        .font(.headline.weight(.medium))
 
                     Spacer()
 
                     Text("\(searchConcurrency)")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                 }
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
-            .prefersDefaultFocus(true, in: rightListFocusScope)
+            .focused($focusedSubpageItem, equals: "datasource_concurrency")
 
             Text("订阅")
                 .font(.body)
@@ -497,18 +616,23 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Text("CSS解析Debug模式")
-                        .font(.title3.weight(.medium))
+                        .font(.headline.weight(.medium))
 
                     Spacer()
 
                     Text(isDebugRenderEnabled ? "开" : "关")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                 }
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
-            .prefersDefaultFocus(true, in: rightListFocusScope)
+            .focused($focusedSubpageItem, equals: "developer_debug")
         }
+    }
+
+    private var appVersionString: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
+        return "AniTV V\(version)"
     }
 
     // Subpage: About
@@ -527,7 +651,23 @@ struct SettingsView: View {
                 .padding(.horizontal, 28)
                 .frame(height: 76)
             }
-            .prefersDefaultFocus(true, in: rightListFocusScope)
+            .focused($focusedSubpageItem, equals: "about_repo")
+
+            SettingsRowButton {
+                // Version info
+            } label: {
+                HStack {
+                    Text("版本号")
+                        .font(.callout)
+
+                    Spacer()
+
+                    Text(appVersionString)
+                        .font(.callout)
+                }
+                .padding(.horizontal, 28)
+                .frame(height: 76)
+            }
         }
     }
 
@@ -573,78 +713,28 @@ struct SettingsView: View {
 struct SettingsRowButton<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let label: () -> Content
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
-            label()
-                .foregroundStyle(isFocused ? Color.black : Color.white)
-                .background(
-                    Capsule()
-                        .fill(isFocused ? Color.white : Color.white.opacity(0.18))
-                )
-                .scaleEffect(isFocused ? 1.03 : 1.0)
-                .animation(.easeInOut(duration: 0.15), value: isFocused)
+            SettingsRowContent(label: label)
         }
         .buttonStyle(CleanButtonStyle())
-        .focused($isFocused)
     }
 }
 
-struct SettingsPillButton<Content: View>: View {
-    let action: () -> Void
+struct SettingsRowContent<Content: View>: View {
     @ViewBuilder let label: () -> Content
-    @FocusState private var isFocused: Bool
+    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        Button(action: action) {
-            label()
-                .scaleEffect(isFocused ? 1.06 : 1.0)
-                .shadow(color: isFocused ? Color.white.opacity(0.5) : Color.black.opacity(0.3), radius: isFocused ? 14 : 6)
-                .animation(.easeInOut(duration: 0.15), value: isFocused)
-        }
-        .buttonStyle(CleanButtonStyle())
-        .focused($isFocused)
+        label()
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .background(
+                Capsule()
+                    .fill(isFocused ? Color.white : Color.white.opacity(0.18))
+            )
+            .scaleEffect(isFocused ? 1.03 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: isFocused)
     }
 }
 
-private struct LANLoginQRCodeView: View {
-    let urlString: String
-
-    private let context = CIContext()
-    private let filter = CIFilter.qrCodeGenerator()
-
-    var body: some View {
-        Group {
-            if !urlString.isEmpty, let image = makeQRCodeImage(from: urlString) {
-                Image(uiImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(16)
-            } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.white.opacity(0.12))
-                    .overlay {
-                        Text("等待局域网地址")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-            }
-        }
-    }
-
-    private func makeQRCodeImage(from string: String) -> UIImage? {
-        let data = Data(string.utf8)
-        filter.setValue(data, forKey: "inputMessage")
-        filter.correctionLevel = "M"
-
-        guard let outputImage = filter.outputImage else { return nil }
-        let transform = CGAffineTransform(scaleX: 12, y: 12)
-        let scaledImage = outputImage.transformed(by: transform)
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-            return nil
-        }
-        return UIImage(cgImage: cgImage)
-    }
-}
