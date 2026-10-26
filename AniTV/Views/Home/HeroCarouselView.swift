@@ -19,9 +19,13 @@ final class HeroCarouselStore: ObservableObject {
     @Published var isLoading = true
     @Published var exceptionMessage = ""
     @Published var transitionDirection = 1
+    @Published var watchingStatusBySubjectID: [Int: Int] = [:]
+    @Published var currentProfile: UserProfile?
+    private var rememberedEpStatusBySubjectID: [Int: Int] = [:]
 
     private var hasLoaded = false
     private let trendingService = TrendingService()
+    private let bgmRepository = BangumiRepository()
 
     private init() {}
 
@@ -38,24 +42,33 @@ final class HeroCarouselStore: ObservableObject {
         transitionDirection >= 0 ? .leading : .trailing
     }
 
-    func loadIfNeeded(database: DatabaseWriter) async {
+    func loadIfNeeded(database: any DatabaseWriter) async {
         guard !hasLoaded else { return }
         hasLoaded = true
         await load(database: database)
     }
 
-    func load(database: DatabaseWriter) async {
+    func load(database: any DatabaseWriter) async {
         isLoading = true
         exceptionMessage = ""
 
         do {
-            let response = try await trendingService.fetchTrendingSubjectsWithBackdrop(database: database)
+            async let trendingTask = trendingService.fetchTrendingSubjectsWithBackdrop(database: database)
+            async let profileTask = AniTVDatabase.currentUserProfile(in: database)
+
+            let (response, profile) = try await (trendingTask, profileTask)
+            self.currentProfile = profile
+
+            let bangumiIDs = response.map { String($0.subject.id) }
+            let dateMap = (try? await AniTVDatabase.fetchBangumiDataDateMap(for: bangumiIDs, in: database)) ?? [:]
+
             var mappedItems: [AnimeSubject] = []
             mappedItems.reserveCapacity(response.count)
 
             for entry in response {
                 let subject = entry.subject.subject
                 let backdropURL = URL(string: entry.backdropImage)
+                let dateInfo = dateMap[String(subject.id)]
 
                 let anime = AnimeSubject(
                     id: subject.id,
@@ -69,12 +82,35 @@ final class HeroCarouselStore: ObservableObject {
                     ),
                     type: mapSubjectType(subject.type),
                     lang: "",
-                    begin: "",
-                    broadcast: "",
-                    end: "",
+                    begin: dateInfo?.begin ?? "",
+                    broadcast: dateInfo?.broadcast ?? "",
+                    end: dateInfo?.end ?? "",
                     backdrop: backdropURL
                 )
                 mappedItems.append(anime)
+            }
+
+            if let profile, profile.isAuthenticated, let bgmUserID = profile.effectiveBgmUserID {
+                do {
+                    let collections = try await bgmRepository.fetchUserCollections(
+                        userID: bgmUserID,
+                        subjectType: 2,
+                        collectionType: .watching,
+                        limit: 50,
+                        offset: 0
+                    )
+                    self.watchingStatusBySubjectID = Dictionary(
+                        collections.data.map { ($0.subjectID, $0.epStatus) },
+                        uniquingKeysWith: { first, _ in first }
+                    )
+                    for (subjectID, epStatus) in self.watchingStatusBySubjectID {
+                        self.rememberedEpStatusBySubjectID[subjectID] = epStatus
+                    }
+                } catch {
+                    print("[HeroCarouselStore] Failed to fetch user collections: \(error)")
+                }
+            } else {
+                self.watchingStatusBySubjectID = [:]
             }
 
             withAnimation {
@@ -85,6 +121,79 @@ final class HeroCarouselStore: ObservableObject {
             exceptionMessage = error.localizedDescription
             isLoading = false
             hasLoaded = false
+        }
+    }
+
+    func reloadWatchingStatus(database: any DatabaseWriter) async {
+        do {
+            currentProfile = try await AniTVDatabase.currentUserProfile(in: database)
+        } catch {
+            currentProfile = nil
+        }
+        guard let profile = currentProfile, profile.isAuthenticated, let bgmUserID = profile.effectiveBgmUserID else {
+            watchingStatusBySubjectID = [:]
+            return
+        }
+        do {
+            let collections = try await bgmRepository.fetchUserCollections(
+                userID: bgmUserID,
+                subjectType: 2,
+                collectionType: .watching,
+                limit: 50,
+                offset: 0
+            )
+            watchingStatusBySubjectID = Dictionary(
+                collections.data.map { ($0.subjectID, $0.epStatus) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            for (subjectID, epStatus) in watchingStatusBySubjectID {
+                rememberedEpStatusBySubjectID[subjectID] = epStatus
+            }
+        } catch {
+            print("[HeroCarouselStore] Failed to reload user collections: \(error)")
+        }
+    }
+
+    func toggleWatchingState(
+        for subjectID: Int,
+        onCompleted: @escaping () -> Void
+    ) async {
+        guard let profile = currentProfile, profile.isAuthenticated else { return }
+        let isWatching = watchingStatusBySubjectID[subjectID] != nil
+        let targetType: SubjectCollectionType = isWatching ? .dropped : .watching
+
+        if isWatching, let current = watchingStatusBySubjectID[subjectID] {
+            rememberedEpStatusBySubjectID[subjectID] = current
+        }
+
+        do {
+            try await bgmRepository.setSubjectCollectionType(
+                subjectID: subjectID,
+                type: targetType.rawValue,
+                userID: profile.effectiveBgmUserID
+            )
+
+            var epStatusToSet = rememberedEpStatusBySubjectID[subjectID] ?? 0
+            if !isWatching && epStatusToSet == 0 {
+                if let remote = try? await bgmRepository.currentUserCollection(
+                    subjectID: subjectID,
+                    userID: profile.effectiveBgmUserID
+                ) {
+                    epStatusToSet = remote.epStatus
+                    rememberedEpStatusBySubjectID[subjectID] = remote.epStatus
+                }
+            }
+
+            await MainActor.run {
+                if isWatching {
+                    watchingStatusBySubjectID.removeValue(forKey: subjectID)
+                } else {
+                    watchingStatusBySubjectID[subjectID] = epStatusToSet
+                }
+                onCompleted()
+            }
+        } catch {
+            print("[HeroCarouselStore] Failed to toggle watching status: \(error)")
         }
     }
 
@@ -108,6 +217,7 @@ final class HeroCarouselStore: ObservableObject {
 
 struct HeroCarouselView: View {
     let openAnimeDetail: (Int) -> Void
+    var isCarouselActive: Bool = false
     @ObservedObject private var store = HeroCarouselStore.shared
     
     // 自动滚动
@@ -148,10 +258,23 @@ struct HeroCarouselView: View {
         .task { await store.loadIfNeeded(database: database) }
         
         // 🎯 自动滚动
+        .onAppear {
+            if !isCarouselActive {
+                timer.upstream.connect().cancel()
+            }
+        }
         .onReceive(timer) { _ in
+            guard isCarouselActive else { return }
             guard !store.items.isEmpty, !store.isLoading else { return }
             isAutoScrolling = true
             store.moveSelection(by: 1)
+        }
+        .onChange(of: isCarouselActive) { _, active in
+            if active {
+                resetTimer()
+            } else {
+                timer.upstream.connect().cancel()
+            }
         }
         .onChange(of: store.selection) { _, _ in
             if !isAutoScrolling {
@@ -163,6 +286,7 @@ struct HeroCarouselView: View {
     }
     private func resetTimer() {
         timer.upstream.connect().cancel()
+        guard isCarouselActive else { return }
         timer = Timer.publish(every: autoScrollDuration, on: .main, in: .common).autoconnect()
     }
 }

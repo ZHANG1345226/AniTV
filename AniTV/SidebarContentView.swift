@@ -128,7 +128,15 @@ struct SidebarContentView: View {
                     selectedCategory: selectedCategory,
                     columnVisibility: sidebarColumnVisibility,
                     homeContinueWatchingRefreshToken: homeContinueWatchingRefreshToken,
-                    openAnimeDetail: router.showAnimeDetail
+                    openAnimeDetail: router.showAnimeDetail,
+                    openEpisodePlayer: { episodes, episodeInfo, sessionTitle, initialPlaybackPositionSeconds in
+                        router.showEpisodePlayer(
+                            episodes: episodes,
+                            episodeID: episodeInfo.id,
+                            sessionTitle: sessionTitle,
+                            initialPlaybackPositionSeconds: initialPlaybackPositionSeconds
+                        )
+                    }
                 )
             }
             .navigationDestination(for: AppRoute.self) { route in
@@ -355,6 +363,7 @@ private struct SidebarDetailView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     let homeContinueWatchingRefreshToken: Int
     let openAnimeDetail: (Int) -> Void
+    let openEpisodePlayer: ([BgmEpisodeInfo], BgmEpisodeInfo, String, Int?) -> Void
 
     var body: some View {
         Group {
@@ -367,7 +376,8 @@ private struct SidebarDetailView: View {
             case .home:
                 HomeView(
                     openAnimeDetail: openAnimeDetail,
-                    continueWatchingRefreshToken: homeContinueWatchingRefreshToken
+                    continueWatchingRefreshToken: homeContinueWatchingRefreshToken,
+                    openEpisodePlayer: openEpisodePlayer
                 )
             case .animeList:
                 CollectionView(

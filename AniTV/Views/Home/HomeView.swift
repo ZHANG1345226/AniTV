@@ -247,6 +247,7 @@ final class HomeContentStore: ObservableObject {
 struct HomeView: View {
     let openAnimeDetail: (Int) -> Void
     let continueWatchingRefreshToken: Int
+    let openEpisodePlayer: ([BgmEpisodeInfo], BgmEpisodeInfo, String, Int?) -> Void
 
     private enum ScrollTarget {
         case heroTop
@@ -254,10 +255,12 @@ struct HomeView: View {
 
     init(
         openAnimeDetail: @escaping (Int) -> Void,
-        continueWatchingRefreshToken: Int = 0
+        continueWatchingRefreshToken: Int = 0,
+        openEpisodePlayer: @escaping ([BgmEpisodeInfo], BgmEpisodeInfo, String, Int?) -> Void = { _, _, _, _ in }
     ) {
         self.openAnimeDetail = openAnimeDetail
         self.continueWatchingRefreshToken = continueWatchingRefreshToken
+        self.openEpisodePlayer = openEpisodePlayer
     }
 
     @Environment(\.resetFocus) private var resetFocus
@@ -270,6 +273,7 @@ struct HomeView: View {
     @State private var shouldPreferHeroDefaultFocus = false
     @State private var heroDefaultFocusTask: Task<Void, Never>?
     @State private var preferredHeroFocusTarget: HeroActionButtonFocus = .play
+    @State private var isHeroFocused = false
     @Namespace private var heroFocusScope
 
     var body: some View {
@@ -280,9 +284,12 @@ struct HomeView: View {
                     heroHeight: proxy.size.height
                 )
 
-                HeroCarouselView(openAnimeDetail: openAnimeDetail)
-                    .ignoresSafeArea()
-                    .offset(y: heroOffset)
+                HeroCarouselView(
+                    openAnimeDetail: openAnimeDetail,
+                    isCarouselActive: isHeroFocused
+                )
+                .ignoresSafeArea()
+                .offset(y: heroOffset)
 
                 LinearGradient(
                     colors: [
@@ -306,10 +313,23 @@ struct HomeView: View {
                                 Color.clear
 
                                 if let item = heroStore.currentItem {
+                                    let epStatus = heroStore.watchingStatusBySubjectID[item.id]
+                                    let isWatching = (heroStore.currentProfile?.isAuthenticated == true) && (epStatus != nil)
+                                    let playTitle: String = {
+                                        if let epStatus, epStatus > 0 {
+                                            return "第\(epStatus + 1)集"
+                                        }
+                                        return "立即播放"
+                                    }()
+
                                     HomeHeroOverlayView(
                                         item: item,
                                         itemCount: heroStore.items.count,
                                         selection: heroStore.selection,
+                                        isWatching: isWatching,
+                                        playTitle: playTitle,
+                                        onPlay: { handleHeroPlay(for: item) },
+                                        onToggleWatching: { handleHeroToggleWatching(for: item) },
                                         openAnimeDetail: openAnimeDetail,
                                         onMoveToPrevious: {
                                             heroStore.moveSelection(by: -1)
@@ -320,6 +340,7 @@ struct HomeView: View {
                                         defaultFocusScope: heroFocusScope,
                                         preferredFocusTarget: preferredHeroFocusTarget,
                                         onActionFocused: rememberHeroActionFocused,
+                                        onFocusChange: { isHeroFocused = $0 },
                                         prefersDefaultFocus: shouldPreferHeroDefaultFocus
                                     )
                                     .frame(maxWidth: proxy.size.width * 0.58, alignment: .leading)
@@ -339,7 +360,8 @@ struct HomeView: View {
                                 CustomIndexBar(
                                     numberOfPages: heroStore.items.count,
                                     currentPage: heroStore.selection,
-                                    duration: 10
+                                    duration: 10,
+                                    isActive: isHeroFocused
                                 )
                                 .frame(maxWidth: .infinity, alignment: .center)
 //                                    .padding(.bottom, -10)
@@ -435,6 +457,13 @@ struct HomeView: View {
         .onChange(of: continueWatchingRefreshToken) { _, _ in
             Task {
                 await store.refreshContinueWatching(database: database)
+                await heroStore.reloadWatchingStatus(database: database)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .userProfileDidChange)) { _ in
+            Task {
+                await store.refreshContinueWatching(database: database)
+                await heroStore.reloadWatchingStatus(database: database)
             }
         }
     }
@@ -497,6 +526,61 @@ struct HomeView: View {
     private func rememberHeroActionFocused(_ target: HeroActionButtonFocus) {
         preferredHeroFocusTarget = target
     }
+
+    private func handleHeroPlay(for item: AnimeSubject) {
+        Task {
+            let epStatus = heroStore.watchingStatusBySubjectID[item.id] ?? 0
+            do {
+                let response = try await BangumiRepository().getEpisodes(id: item.id)
+                let episodes = response.data
+                guard !episodes.isEmpty else {
+                    openAnimeDetail(item.id)
+                    return
+                }
+
+                let targetEpisode: BgmEpisodeInfo
+                if epStatus > 0 {
+                    let targetSort = Double(epStatus + 1)
+                    targetEpisode = episodes.first(where: {
+                        ($0.ep > 0 ? $0.ep : $0.sort) == targetSort
+                    }) ?? (episodes.indices.contains(epStatus) ? episodes[epStatus] : episodes.first!)
+                } else {
+                    targetEpisode = episodes.first!
+                }
+
+                var resumeSeconds: Int? = nil
+                if let profile = try? await AniTVDatabase.currentUserProfile(in: database),
+                   profile.isAuthenticated,
+                   let bgmUserID = profile.effectiveBgmUserID {
+                    if let watchState = try? await AniTVDatabase.localEpisodeWatchState(
+                        bgmUserID: bgmUserID,
+                        episodeID: targetEpisode.id,
+                        in: database
+                    ), watchState.playheadSeconds > 0 {
+                        resumeSeconds = watchState.playheadSeconds
+                    }
+                }
+
+                let displayName = !item.titleTranslate.zhHans.isEmpty ? item.titleTranslate.zhHans : item.title
+                await MainActor.run {
+                    openEpisodePlayer(episodes, targetEpisode, displayName, resumeSeconds)
+                }
+            } catch {
+                print("[HomeView] Failed to prepare hero playback: \(error)")
+                openAnimeDetail(item.id)
+            }
+        }
+    }
+
+    private func handleHeroToggleWatching(for item: AnimeSubject) {
+        Task {
+            await heroStore.toggleWatchingState(for: item.id) {
+                Task {
+                    await store.refreshContinueWatching(database: database)
+                }
+            }
+        }
+    }
 }
 
 private struct HomeDebugStatusView: View {
@@ -522,17 +606,24 @@ private struct HomeHeroOverlayView: View {
     let item: AnimeSubject
     let itemCount: Int
     let selection: Int
+    let isWatching: Bool
+    let playTitle: String
+    let onPlay: () -> Void
+    let onToggleWatching: () -> Void
     let openAnimeDetail: (Int) -> Void
     let onMoveToPrevious: () -> Void
     let onMoveToNext: () -> Void
     let defaultFocusScope: Namespace.ID
     let preferredFocusTarget: HeroActionButtonFocus
     let onActionFocused: (HeroActionButtonFocus) -> Void
+    let onFocusChange: (Bool) -> Void
     let prefersDefaultFocus: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            NewArrivalPill(text: "Sunday")
+            if item.endDate == nil, let airDate = item.startDate {
+                NewArrivalPill(text: airDate.formatted(.dateTime.weekday(.wide)))
+            }
 
             VStack(alignment: .leading, spacing: 14) {
                 Text(item.titleTranslate.zhHans.isEmpty ? item.title : item.titleTranslate.zhHans)
@@ -544,10 +635,6 @@ private struct HomeHeroOverlayView: View {
                 HStack(spacing: 14) {
                     Text(String(format: "%.1f", item.score))
                     Text(item.type.uppercased())
-
-                    if !item.begin.isEmpty {
-                        Text(item.begin)
-                    }
                 }
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.82))
@@ -561,12 +648,17 @@ private struct HomeHeroOverlayView: View {
 
             ActionButtonsView(
                 anime: item,
+                playTitle: playTitle,
+                onPlay: onPlay,
+                isWatching: isWatching,
+                onToggleWatching: onToggleWatching,
                 openAnimeDetail: openAnimeDetail,
                 onMoveToPrevious: onMoveToPrevious,
                 onMoveToNext: onMoveToNext,
                 defaultFocusScope: defaultFocusScope,
                 preferredFocusTarget: preferredFocusTarget,
                 onActionFocused: onActionFocused,
+                onFocusChange: onFocusChange,
                 prefersDefaultFocus: prefersDefaultFocus
             )
             .padding(.leading, -16)

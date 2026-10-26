@@ -47,15 +47,32 @@ struct AnimeSubject: Codable, Identifiable, Hashable {
     
     /// 将 ISO8601 字符串转为 Date 对象
     var startDate: Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: begin)
+        guard !begin.isEmpty else {
+            return inferFromSerieInfo(info: info).firstAiredAt
+        }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: begin) {
+            return date
+        }
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        if let date = basic.date(from: begin) {
+            return date
+        }
+        return inferFromSerieInfo(info: info).firstAiredAt
     }
-    
-    var endDate: Date?{
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: end)
+
+    var endDate: Date? {
+        guard !end.isEmpty else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: end) {
+            return date
+        }
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        return basic.date(from: end)
     }
     
     /// 格式化后的评分字符串 (保留1位小数)

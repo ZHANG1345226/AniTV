@@ -12,6 +12,7 @@ struct CustomIndexBar: View {
     let currentPage: Int
     // ⚠️ 必须与 HeroCarouselView 里的 Timer 时间保持一致 (例如 5.0 秒)
     let duration: TimeInterval
+    var isActive: Bool = true
     
     var body: some View {
         HStack(spacing: 12) {
@@ -20,7 +21,7 @@ struct CustomIndexBar: View {
                 
                 if isSelected {
                     // 选中的：显示倒计时胶囊
-                    TimerCapsule(duration: duration)
+                    TimerCapsule(duration: duration, isActive: isActive)
                         .frame(width: 32, height: 8)
                 } else {
                     // 未选中的：显示普通小圆点
@@ -43,6 +44,7 @@ struct CustomIndexBar: View {
 // MARK: - 倒计时胶囊组件
 struct TimerCapsule: View {
     let duration: TimeInterval
+    var isActive: Bool = true
     
     // 控制进度的状态
     @State private var width: CGFloat = 0
@@ -61,14 +63,23 @@ struct TimerCapsule: View {
                     .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
             }
             .onAppear {
-                // 当视图出现时 (即切换到了这个 index)，立即开始动画
-                // 初始状态是 0
-                width = 0
-                // 线性动画，时长等于自动轮播的间隔
-                withAnimation(.linear(duration: duration)) {
-                    width = proxy.size.width // 填满宽度
+                startAnimation(totalWidth: proxy.size.width)
+            }
+            .onChange(of: isActive) { _, active in
+                if active {
+                    startAnimation(totalWidth: proxy.size.width)
+                } else {
+                    width = 0
                 }
             }
+        }
+    }
+
+    private func startAnimation(totalWidth: CGFloat) {
+        width = 0
+        guard isActive else { return }
+        withAnimation(.linear(duration: duration)) {
+            width = totalWidth
         }
     }
 }

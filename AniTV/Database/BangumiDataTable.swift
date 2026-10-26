@@ -101,6 +101,41 @@ extension AniTVDatabase {
         }
     }
 
+    struct BangumiDateInfo: Sendable {
+        let begin: String
+        let broadcast: String
+        let end: String
+    }
+
+    static func fetchBangumiDataDateMap(
+        for bangumiIDs: [String],
+        in database: any DatabaseWriter
+    ) async throws -> [String: BangumiDateInfo] {
+        guard !bangumiIDs.isEmpty else { return [:] }
+        return try await database.read { db in
+            let placeholders = bangumiIDs.map { _ in "?" }.joined(separator: ",")
+            let arguments = StatementArguments(bangumiIDs)
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT "bangumi_id", "begin", "broadcast", "end"
+                FROM "bangumi_data"
+                WHERE "bangumi_id" IN (\(placeholders))
+                """,
+                arguments: arguments
+            )
+            var map: [String: BangumiDateInfo] = [:]
+            for row in rows {
+                let id: String = row["bangumi_id"]
+                let begin: String = row["begin"] ?? ""
+                let broadcast: String = row["broadcast"] ?? ""
+                let end: String = row["end"] ?? ""
+                map[id] = BangumiDateInfo(begin: begin, broadcast: broadcast, end: end)
+            }
+            return map
+        }
+    }
+
     static func fetchAllBangumiDataRows(
         in database: any DatabaseWriter
     ) async throws -> [TimelineBangumiDataRow] {

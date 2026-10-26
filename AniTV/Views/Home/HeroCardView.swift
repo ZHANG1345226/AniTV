@@ -41,20 +41,26 @@ struct HeroCardView: View {
 struct ActionButtonsView: View {
     @FocusState private var focusedButton: HeroActionButtonFocus?
     var anime: AnimeSubject
+    var playTitle: String = "立即播放"
+    var onPlay: () -> Void = {}
+    var isWatching: Bool = false
+    var onToggleWatching: () -> Void = {}
     let openAnimeDetail: (Int) -> Void
     let onMoveToPrevious: () -> Void
     let onMoveToNext: () -> Void
     var defaultFocusScope: Namespace.ID?
     var preferredFocusTarget: HeroActionButtonFocus = .play
     var onActionFocused: (HeroActionButtonFocus) -> Void = { _ in }
+    var onFocusChange: (Bool) -> Void = { _ in }
     var prefersDefaultFocus = false
     
     var body: some View {
         ZStack(alignment: .leading) {
             HStack(spacing: 20) {
                 UnifiedActionButton(
-                    title: "立即播放",
+                    title: playTitle,
                     systemImage: "play.fill",
+                    action: onPlay,
                     focusedButton: $focusedButton,
                     focusTarget: .play,
                     defaultFocusScope: defaultFocusScope,
@@ -62,7 +68,8 @@ struct ActionButtonsView: View {
                 )
 
                 CircleActionButton(
-                    systemImage: "plus",
+                    systemImage: isWatching ? "checkmark" : "plus",
+                    action: onToggleWatching,
                     focusedButton: $focusedButton,
                     focusTarget: .favorite,
                     defaultFocusScope: defaultFocusScope,
@@ -95,12 +102,14 @@ struct ActionButtonsView: View {
         .focusSection()
         .onAppear {
             restoreDefaultFocusIfNeeded()
+            onFocusChange(focusedButton != nil)
         }
         .onChange(of: prefersDefaultFocus) { _, shouldPrefer in
             guard shouldPrefer else { return }
             restoreDefaultFocusIfNeeded()
         }
         .onChange(of: focusedButton) { _, newValue in
+            onFocusChange(newValue != nil)
             guard let newValue else { return }
 
             if newValue == .previousTrigger {
@@ -150,6 +159,7 @@ struct InvisibleFocusTriggerButton: View {
 struct UnifiedActionButton: View {
     let title: String
     let systemImage: String
+    var action: () -> Void = {}
     let height: CGFloat = 80
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
@@ -157,16 +167,22 @@ struct UnifiedActionButton: View {
     var prefersDefaultFocus = false
 
     var body: some View {
-        let button = Button(action: { print("Action") }) {
-            HStack {
+        let button = Button(action: action) {
+            HStack(spacing: 0) {
                 Image(systemName: systemImage)
+                    .font(.headline)
+                    .frame(width: 76)
+                    .padding(.leading, 8)
+
                 Text(title)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 28)
             }
-            .font(.headline)
             .scaleEffect(isFocused ? 1.01 : 1.0)
             .animation(.easeInOut(duration: 0.2), value: isFocused)
-            .padding(.horizontal, 40)
-            .frame(height: height)
+            .frame(width: 300, height: height)
             // 手动控制聚焦时的背景色
             .background(isFocused ? Color.white : Color.white.opacity(0.1))
             .foregroundColor(isFocused ? .black : .white)
@@ -201,6 +217,7 @@ struct CleanButtonStyle: ButtonStyle {
 // 圆形按钮组件
 struct CircleActionButton: View {
     let systemImage: String
+    var action: () -> Void = {}
     let size: CGFloat = 80 // 必须与上面高度一致
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
@@ -208,7 +225,7 @@ struct CircleActionButton: View {
     var prefersDefaultFocus = false
 
     var body: some View {
-        let button = Button(action: { print("Action") }) {
+        let button = Button(action: action) {
             Image(systemName: systemImage)
                 .scaleEffect(isFocused ? 1.15 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: isFocused)
