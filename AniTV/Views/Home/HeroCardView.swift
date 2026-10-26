@@ -17,10 +17,15 @@ enum HeroActionButtonFocus: Hashable {
 
 struct HeroCardView: View {
     let item: AnimeSubject
-    
+
+    private var isTMDB: Bool {
+        item.backdrop?.host?.contains("tmdb.org") == true
+    }
+
     var body: some View {
         ZStack {
             KFImage(item.backdrop)
+                .setProcessor(isTMDB ? DefaultImageProcessor.default : BGMBackdropCropProcessor.default)
                 .resizable()
                 .placeholder {
                     Color.gray.opacity(0.3)

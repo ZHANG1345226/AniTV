@@ -47,6 +47,7 @@ final class TimelineStore: ObservableObject {
             timeline = map
             orderedDays = map.keys.sorted()
             isLoading = false
+            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
@@ -68,11 +69,20 @@ struct TimelineView: View {
                     .tint(.white)
                     .focusable()
             } else if !store.errorMessage.isEmpty {
-                ContentUnavailableView(
-                    "时间线加载失败",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(store.errorMessage)
-                )
+                ContentUnavailableView {
+                    Label("时间线加载失败", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(store.errorMessage)
+                } actions: {
+                    Button {
+                        Task {
+                            await store.load(database: database)
+                        }
+                    } label: {
+                        Label("重试", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } else if store.orderedDays.isEmpty {
                 ContentUnavailableView(
                     "暂无时间线数据",

@@ -30,6 +30,10 @@ struct AnimeDetailView: View {
     @State private var shouldPromptMarkWatchingAfterPlayerExit = false
     @State private var showingMarkWatchingPrompt = false
 
+    private var isBackdropTMDB: Bool {
+        backdropURL?.host?.contains("tmdb.org") == true
+    }
+
     init(
         bgmId: Int,
         playerDismissRefreshToken: Int = 0,
@@ -45,6 +49,7 @@ struct AnimeDetailView: View {
             //Layer 1: 沉浸式背景图
             GeometryReader { proxy in
                 KFImage(backdropURL)
+                    .setProcessor(isBackdropTMDB ? DefaultImageProcessor.default : BGMBackdropCropProcessor.default)
                     .resizable()
                     .placeholder {
                         Color.gray.opacity(0.3)
