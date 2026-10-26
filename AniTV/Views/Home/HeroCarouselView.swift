@@ -21,6 +21,7 @@ final class HeroCarouselStore: ObservableObject {
     @Published var transitionDirection = 1
     @Published var watchingStatusBySubjectID: [Int: Int] = [:]
     @Published var currentProfile: UserProfile?
+    @Published var heroDetailsBySubjectID: [Int: BangumiGraphQLHeroSubjectNode] = [:]
     private var rememberedEpStatusBySubjectID: [Int: Int] = [:]
 
     private var hasLoaded = false
@@ -60,7 +61,16 @@ final class HeroCarouselStore: ObservableObject {
             self.currentProfile = profile
 
             let bangumiIDs = response.map { String($0.subject.id) }
-            let dateMap = (try? await AniTVDatabase.fetchBangumiDataDateMap(for: bangumiIDs, in: database)) ?? [:]
+            let subjectIDs = response.map { $0.subject.id }
+            async let dateMapTask = AniTVDatabase.fetchBangumiDataDateMap(for: bangumiIDs, in: database)
+            async let detailsTask = bgmRepository.fetchHeroSubjectDetails(subjectIDs: subjectIDs)
+
+            let (dateMapResult, detailsResult) = await (
+                (try? await dateMapTask) ?? [:],
+                (try? await detailsTask) ?? [:]
+            )
+            let dateMap = dateMapResult
+            self.heroDetailsBySubjectID = detailsResult
 
             var mappedItems: [AnimeSubject] = []
             mappedItems.reserveCapacity(response.count)
@@ -212,6 +222,42 @@ final class HeroCarouselStore: ObservableObject {
         withAnimation(.easeInOut(duration: 0.45)) {
             selection = nextIndex
         }
+    }
+
+    func displayDescription(for item: AnimeSubject) -> String {
+        let epStatus = watchingStatusBySubjectID[item.id] ?? 0
+        let detail = heroDetailsBySubjectID[item.id]
+        let summary = detail?.summary.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        // 如果当前剧集未看过 (未登录、未在看或 epStatus == 0)
+        guard let currentProfile, currentProfile.isAuthenticated, epStatus > 0 else {
+            return !summary.isEmpty ? summary : item.info
+        }
+
+        // 如果当前剧集看过 (epStatus > 0)
+        // 展示下一集的 (name_cn??name)? ((name_cn??name)+(description?": "+description:"")):summary
+        if let episodes = detail?.episodes {
+            let nextSort = Double(epStatus + 1)
+            let nextEp = episodes.first(where: { $0.sort == nextSort })
+                ?? (episodes.indices.contains(epStatus) ? episodes[epStatus] : nil)
+
+            if let nextEp {
+                let nameCN = nextEp.nameCN.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = nextEp.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let epTitle = !nameCN.isEmpty ? nameCN : name
+
+                if !epTitle.isEmpty {
+                    let desc = nextEp.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !desc.isEmpty {
+                        return "\(epTitle): \(desc)"
+                    } else {
+                        return epTitle
+                    }
+                }
+            }
+        }
+
+        return !summary.isEmpty ? summary : item.info
     }
 }
 

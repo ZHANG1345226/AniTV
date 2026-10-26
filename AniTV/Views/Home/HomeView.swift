@@ -321,6 +321,7 @@ struct HomeView: View {
                                         }
                                         return "立即播放"
                                     }()
+                                    let itemDescription = heroStore.displayDescription(for: item)
 
                                     HomeHeroOverlayView(
                                         item: item,
@@ -328,6 +329,7 @@ struct HomeView: View {
                                         selection: heroStore.selection,
                                         isWatching: isWatching,
                                         playTitle: playTitle,
+                                        description: itemDescription,
                                         onPlay: { handleHeroPlay(for: item) },
                                         onToggleWatching: { handleHeroToggleWatching(for: item) },
                                         openAnimeDetail: openAnimeDetail,
@@ -608,6 +610,7 @@ private struct HomeHeroOverlayView: View {
     let selection: Int
     let isWatching: Bool
     let playTitle: String
+    let description: String
     let onPlay: () -> Void
     let onToggleWatching: () -> Void
     let openAnimeDetail: (Int) -> Void
@@ -639,10 +642,11 @@ private struct HomeHeroOverlayView: View {
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.82))
 
-                Text(item.info)
+                Text(description)
                     .font(.body)
                     .foregroundStyle(.white.opacity(0.76))
                     .lineLimit(3)
+                    .truncationMode(.tail)
                     .frame(maxWidth: 760, alignment: .leading)
             }
 

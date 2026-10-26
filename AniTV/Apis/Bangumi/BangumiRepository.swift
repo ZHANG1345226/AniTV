@@ -430,6 +430,45 @@ struct BangumiRepository {
         return subjectsByID
     }
 
+    func fetchHeroSubjectDetails(subjectIDs: [Int]) async throws -> [Int: BangumiGraphQLHeroSubjectNode] {
+        let uniqueSubjectIDs = Array(Set(subjectIDs)).sorted()
+        guard !uniqueSubjectIDs.isEmpty else { return [:] }
+
+        var subjectsByID: [Int: BangumiGraphQLHeroSubjectNode] = [:]
+        for batch in uniqueSubjectIDs.chunked(into: 40) {
+            let query = makeHeroSubjectDetailsQuery(subjectIDs: batch)
+            let variables = Dictionary(
+                uniqueKeysWithValues: batch.enumerated().map { index, subjectID in
+                    ("id\(index)", subjectID)
+                }
+            )
+
+            let url = BangumiAPI.pub.build("v0/graphql")
+            let decoded = try await client.request(
+                BangumiGraphQLResponse<[String: BangumiGraphQLHeroSubjectNode?]>.self,
+                method: "POST",
+                url: url,
+                headers: jsonHeaders(),
+                body: try JSONEncoder().encode(
+                    BangumiGraphQLRequest(query: query, variables: variables)
+                )
+            )
+
+            if let errors = decoded.errors, !errors.isEmpty, decoded.data == nil {
+                throw ChiiError(message: errors.map { $0.message }.joined(separator: "\n"))
+            }
+
+            if let data = decoded.data {
+                for node in data.values {
+                    guard let node else { continue }
+                    subjectsByID[node.id] = node
+                }
+            }
+        }
+
+        return subjectsByID
+    }
+
     private func fetchBrowserTrendingSubjects(
         type: Int,
         limit: Int,
@@ -534,6 +573,42 @@ struct BangumiRepository {
         }
 
         query TimelineSubjectDetails(\(variableDefinitions)) {
+        \(subjectSelections)
+        }
+        """
+    }
+
+    private func makeHeroSubjectDetailsQuery(subjectIDs: [Int]) -> String {
+        let variableDefinitions = subjectIDs.enumerated().map { index, _ in
+            "$id\(index): Int!"
+        }
+        .joined(separator: ", ")
+
+        let subjectSelections = subjectIDs.enumerated().map { index, _ in
+            "s\(index): subject(id: $id\(index)) { ...HeroSubjectFragment }"
+        }
+        .joined(separator: "\n")
+
+        return """
+        fragment HeroEpisodeFragment on Episode {
+          id
+          airdate
+          description
+          name
+          name_cn
+          sort
+          type
+        }
+
+        fragment HeroSubjectFragment on Subject {
+          id
+          name
+          name_cn
+          summary
+          episodes: episodes(limit: 50, offset: 0, type: 0) { ...HeroEpisodeFragment }
+        }
+
+        query HeroSubjectDetails(\(variableDefinitions)) {
         \(subjectSelections)
         }
         """

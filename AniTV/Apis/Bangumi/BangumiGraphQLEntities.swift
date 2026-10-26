@@ -122,3 +122,59 @@ struct BangumiGraphQLTimelineSubjectNode: Decodable, Sendable {
         self.episodes = try container.decode([BangumiGraphQLTimelineEpisodeNode].self, forKey: .episodes)
     }
 }
+
+struct BangumiGraphQLHeroEpisodeNode: Decodable, Sendable {
+    let id: Int
+    let airdate: String
+    let description: String
+    let name: String
+    let nameCN: String
+    let sort: Double
+    let type: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case airdate
+        case description
+        case name
+        case nameCN = "name_cn"
+        case sort
+        case type
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.airdate = try container.decodeIfPresent(String.self, forKey: .airdate) ?? ""
+        self.description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        self.nameCN = try container.decodeIfPresent(String.self, forKey: .nameCN) ?? ""
+        self.sort = try container.decodeIfPresent(Double.self, forKey: .sort) ?? 0
+        self.type = try container.decodeIfPresent(Int.self, forKey: .type) ?? 0
+    }
+}
+
+struct BangumiGraphQLHeroSubjectNode: Decodable, Sendable {
+    let id: Int
+    let name: String
+    let nameCN: String
+    let summary: String
+    let episodes: [BangumiGraphQLHeroEpisodeNode]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case nameCN = "name_cn"
+        case summary
+        case episodes
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        self.nameCN = try container.decodeIfPresent(String.self, forKey: .nameCN) ?? ""
+        self.summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        self.episodes = try container.decodeIfPresent([BangumiGraphQLHeroEpisodeNode].self, forKey: .episodes) ?? []
+    }
+}
