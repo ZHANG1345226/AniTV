@@ -514,6 +514,7 @@ struct HomeView: View {
     }
 
     private func resetHeroFocus() {
+        guard !isHeroFocused else { return }
         heroDefaultFocusTask?.cancel()
         heroDefaultFocusTask = Task { @MainActor in
             resetFocus(in: heroFocusScope)

@@ -268,10 +268,8 @@ struct HeroCarouselView: View {
     var isCarouselActive: Bool = false
     @ObservedObject private var store = HeroCarouselStore.shared
     
-    // 自动滚动
+    // 自动滚动周期
     private let autoScrollDuration: TimeInterval = 10.0
-    @State private var timer = Timer.publish(every: 10.0, on: .main, in: .common).autoconnect()
-    @State private var isAutoScrolling = false
     
     @Dependency(\.defaultDatabase) private var database
     
@@ -318,38 +316,18 @@ struct HeroCarouselView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await store.loadIfNeeded(database: database) }
-        
-        // 🎯 自动滚动
-        .onAppear {
-            if !isCarouselActive {
-                timer.upstream.connect().cancel()
-            }
-        }
-        .onReceive(timer) { _ in
+        .task(id: "\(isCarouselActive)-\(store.selection)") {
             guard isCarouselActive else { return }
             guard !store.items.isEmpty, !store.isLoading else { return }
-            isAutoScrolling = true
-            store.moveSelection(by: 1)
-        }
-        .onChange(of: isCarouselActive) { _, active in
-            if active {
-                resetTimer()
-            } else {
-                timer.upstream.connect().cancel()
+            do {
+                try await Task.sleep(for: .seconds(autoScrollDuration))
+                guard !Task.isCancelled, isCarouselActive else { return }
+                guard !store.items.isEmpty, !store.isLoading else { return }
+                store.moveSelection(by: 1)
+            } catch {
+                // Task cancelled
             }
         }
-        .onChange(of: store.selection) { _, _ in
-            if !isAutoScrolling {
-                resetTimer()
-            } else {
-                isAutoScrolling = false
-            }
-        }
-    }
-    private func resetTimer() {
-        timer.upstream.connect().cancel()
-        guard isCarouselActive else { return }
-        timer = Timer.publish(every: autoScrollDuration, on: .main, in: .common).autoconnect()
     }
 }
 #Preview {

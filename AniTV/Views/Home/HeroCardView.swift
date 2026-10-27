@@ -40,7 +40,8 @@ struct HeroCardView: View {
 
 struct ActionButtonsView: View {
     @FocusState private var focusedButton: HeroActionButtonFocus?
-    @State private var lastFocusedButton: HeroActionButtonFocus?
+    @State private var lastMoveTime: Date = .distantPast
+
     var anime: AnimeSubject
     var playTitle: String = "立即播放"
     var onPlay: () -> Void = {}
@@ -56,7 +57,14 @@ struct ActionButtonsView: View {
     var prefersDefaultFocus = false
     
     var body: some View {
-        ZStack(alignment: .leading) {
+        HStack(spacing: 0) {
+            InvisibleFocusTriggerButton(
+                focusedButton: $focusedButton,
+                focusTarget: .previousTrigger,
+                defaultFocusScope: defaultFocusScope
+            )
+            .frame(width: 44, height: 80)
+
             HStack(spacing: 20) {
                 UnifiedActionButton(
                     title: playTitle,
@@ -94,49 +102,29 @@ struct ActionButtonsView: View {
                     }
                 )
             }
-
-            InvisibleFocusTriggerButton(
-                focusedButton: $focusedButton,
-                focusTarget: .previousTrigger
-            )
-            .offset(x: -88)
         }
+        .padding(.leading, -44)
         .padding()
         .focusSection()
         .onAppear {
-            restoreDefaultFocusIfNeeded()
             onFocusChange(focusedButton != nil)
-        }
-        .onChange(of: prefersDefaultFocus) { _, shouldPrefer in
-            guard shouldPrefer else { return }
-            restoreDefaultFocusIfNeeded()
         }
         .onChange(of: focusedButton) { oldValue, newValue in
             onFocusChange(newValue != nil)
-            guard let newValue else {
-                lastFocusedButton = nil
-                return
-            }
+            guard let newValue else { return }
 
             if newValue == .previousTrigger {
-                if oldValue == .play || lastFocusedButton == .play {
+                let now = Date()
+                if oldValue == .play, now.timeIntervalSince(lastMoveTime) > 0.35 {
+                    lastMoveTime = now
                     onMoveToPrevious()
                 }
-                lastFocusedButton = .play
                 DispatchQueue.main.async {
                     focusedButton = .play
                 }
             } else {
-                lastFocusedButton = newValue
                 onActionFocused(newValue)
             }
-        }
-    }
-
-    private func restoreDefaultFocusIfNeeded() {
-        guard prefersDefaultFocus else { return }
-        DispatchQueue.main.async {
-            focusedButton = preferredFocusTarget
         }
     }
 }
@@ -144,25 +132,26 @@ struct ActionButtonsView: View {
 struct InvisibleFocusTriggerButton: View {
     fileprivate let focusedButton: FocusState<HeroActionButtonFocus?>.Binding
     fileprivate let focusTarget: HeroActionButtonFocus
+    var defaultFocusScope: Namespace.ID?
     
     private var isFocused: Bool {
         focusedButton.wrappedValue == focusTarget
     }
 
     var body: some View {
-        Button(action: {}) {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.clear)
-                .overlay {
-                    Text("Prev")
-                        .font(.caption.bold())
-                        .foregroundStyle(Color.clear)
-                }
+        let button = Button(action: {}) {
+            Color.clear
                 .frame(width: 44, height: 80)
         }
         .buttonStyle(CleanButtonStyle())
         .focused(focusedButton, equals: focusTarget)
         .focusEffectDisabled(true)
+
+        if let defaultFocusScope {
+            button.prefersDefaultFocus(false, in: defaultFocusScope)
+        } else {
+            button
+        }
     }
 }
 
