@@ -39,24 +39,30 @@ class DanDanPlayAPI {
         ]
     }
 
-    func getBangumiDetails(bgmId: Int, targetSort: Double? = nil) async throws -> DanDanPlayBangumi {
+    func getBangumiDetails(bgmId: Int, targetSort: Double?) async throws -> DanDanPlayBangumi {
+        try await getBangumiDetails(bgmId: bgmId, targetSorts: targetSort.map { [$0] } ?? [])
+    }
+
+    func getBangumiDetails(bgmId: Int, targetSorts: [Double] = []) async throws -> DanDanPlayBangumi {
         let cache = DanDanPlayCacheManager.shared
-        let sortString = targetSort.map { String(Int($0)) }
+        let sortStrings = targetSorts.map { String(Int($0)) }
         
         // 1. Check local cache first
         if let cachedBangumi = cache.getCachedBangumi(bgmId: bgmId) {
-            if let sortString = sortString {
+            if !sortStrings.isEmpty {
                 let hasEpisode = cachedBangumi.episodes.contains { ep in
-                    ep.episodeNumber == sortString ||
-                    ep.episodeTitle == sortString ||
-                    ep.episodeTitle.contains("第\(sortString)话") ||
-                    ep.episodeTitle.contains("第\(sortString)集")
+                    sortStrings.contains { s in
+                        ep.episodeNumber == s ||
+                        ep.episodeTitle == s ||
+                        ep.episodeTitle.contains("第\(s)话") ||
+                        ep.episodeTitle.contains("第\(s)集")
+                    }
                 }
                 if hasEpisode {
-                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId) with episode \(sortString)")
+                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId) with episode \(sortStrings)")
                     return cachedBangumi
                 } else {
-                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId), but episode \(sortString) missing")
+                    print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId), but episodes \(sortStrings) missing")
                 }
             } else {
                 print("[DanDanPlayCache] Hit bangumi cache for bgmId \(bgmId)")

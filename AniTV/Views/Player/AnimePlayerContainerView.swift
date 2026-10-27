@@ -245,7 +245,7 @@ struct AnimePlayerContainerView: View {
             onPlaybackCompleted?()
         }
         .onAppear {
-            setupDanmaku(bgmId: episodeInfo.subjectId, sort: episodeInfo.sort)
+            setupDanmaku(episodeInfo: episodeInfo)
             hasResolvedAutoPlayback = false
             hasUserSelectedSource = false
             queuedVideoResources = []
@@ -667,36 +667,69 @@ struct AnimePlayerContainerView: View {
         danmuManager = nil
     }
 
-    private func setupDanmaku(bgmId: Int, sort: Double) {
+    private func setupDanmaku(episodeInfo: BgmEpisodeInfo) {
         Task {
             do {
-                let bangumi = try await DanDanPlayAPI.shared.getBangumiDetails(bgmId: bgmId, targetSort: sort)
-                let sortString = String(Int(sort))
+                var candidateSorts: [Double] = []
+                if episodeInfo.ep > 0 {
+                    candidateSorts.append(episodeInfo.ep)
+                }
+                if !candidateSorts.contains(episodeInfo.sort) {
+                    candidateSorts.append(episodeInfo.sort)
+                }
+
+                let bangumi = try await DanDanPlayAPI.shared.getBangumiDetails(bgmId: episodeInfo.subjectId, targetSorts: candidateSorts)
+                let candidateStrings = candidateSorts.map { String(Int($0)) }
                 var matchedEpisode: DanDanPlayEpisode? = nil
                 
-                for ep in bangumi.episodes {
-                    if ep.episodeNumber == sortString || ep.episodeTitle == sortString || ep.episodeTitle.contains("第\(sortString)话") || ep.episodeTitle.contains("第\(sortString)集") || ep.episodeTitle == "0\(sortString)" {
-                        matchedEpisode = ep
-                        break
+                // 1. Exact match on episodeNumber or common title formats
+                for targetString in candidateStrings {
+                    for ep in bangumi.episodes {
+                        if ep.episodeNumber == targetString ||
+                           ep.episodeTitle == targetString ||
+                           ep.episodeTitle.contains("第\(targetString)话") ||
+                           ep.episodeTitle.contains("第\(targetString)集") ||
+                           ep.episodeTitle == (targetString.count == 1 ? "0\(targetString)" : targetString) {
+                            matchedEpisode = ep
+                            break
+                        }
                     }
+                    if matchedEpisode != nil { break }
                 }
                 
+                // 2. Match digit token in episodeTitle
                 if matchedEpisode == nil {
-                    for ep in bangumi.episodes {
-                        let numbers = ep.episodeTitle.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
-                        if numbers.contains(sortString) {
-                            matchedEpisode = ep
+                    for targetString in candidateStrings {
+                        for ep in bangumi.episodes {
+                            let numbers = ep.episodeTitle.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                            if numbers.contains(targetString) {
+                                matchedEpisode = ep
+                                break
+                            }
+                        }
+                        if matchedEpisode != nil { break }
+                    }
+                }
+
+                // 3. Match airdate prefix if available
+                if matchedEpisode == nil, !episodeInfo.airdate.isEmpty {
+                    matchedEpisode = bangumi.episodes.first(where: { ep in
+                        ep.airDate?.hasPrefix(episodeInfo.airdate) == true
+                    })
+                }
+                
+                // 4. Substring fallback
+                if matchedEpisode == nil {
+                    for targetString in candidateStrings {
+                        if let first = bangumi.episodes.first(where: { $0.episodeTitle.contains(targetString) }) {
+                            matchedEpisode = first
                             break
                         }
                     }
                 }
                 
-                if matchedEpisode == nil, let first = bangumi.episodes.first(where: { $0.episodeTitle.contains(sortString) }) {
-                    matchedEpisode = first
-                }
-                
                 if let ep = matchedEpisode {
-                    print("[DanDanPlay] Found episode \(ep.episodeId) for sort \(sort) in bgmId \(bgmId)")
+                    print("[DanDanPlay] Found episode \(ep.episodeId) for \(candidateStrings) in bgmId \(episodeInfo.subjectId)")
                     let provider = DanDanPlayDanmuProvider(episodeId: ep.episodeId, airDateString: ep.airDate) { success in
                         DispatchQueue.main.async {
                             if !success {
@@ -712,13 +745,13 @@ struct AnimePlayerContainerView: View {
                         }
                     }
                 } else {
-                    print("[DanDanPlay] Could not find episode matching sort \(sort) in bgmId \(bgmId)")
+                    print("[DanDanPlay] Could not find episode matching \(candidateStrings) in bgmId \(episodeInfo.subjectId)")
                     await MainActor.run {
                         self.isDanmakuAvailable = false
                     }
                 }
             } catch {
-                print("[DanDanPlay] Failed to get bangumi details for bgmId \(bgmId): \(error)")
+                print("[DanDanPlay] Failed to get bangumi details for bgmId \(episodeInfo.subjectId): \(error)")
                 await MainActor.run {
                     self.isDanmakuAvailable = false
                 }
