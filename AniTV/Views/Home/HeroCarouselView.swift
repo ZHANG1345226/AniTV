@@ -128,8 +128,10 @@ final class HeroCarouselStore: ObservableObject {
                 isLoading = false
             }
         } catch {
-            exceptionMessage = error.localizedDescription
-            isLoading = false
+            withAnimation {
+                exceptionMessage = error.localizedDescription
+                isLoading = false
+            }
             hasLoaded = false
         }
     }
@@ -278,9 +280,23 @@ struct HeroCarouselView: View {
             if store.isLoading {
                 ProgressView()
                     .tint(.white)
+                    .focusable()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if !store.exceptionMessage.isEmpty {
-                Text(store.exceptionMessage)
+                ContentUnavailableView {
+                    Label("轮播图加载失败", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(store.exceptionMessage)
+                } actions: {
+                    Button {
+                        Task {
+                            await store.load(database: database)
+                        }
+                    } label: {
+                        Label("重试", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } else if store.items.isEmpty {
                 Text("暂无推荐内容")
             } else {

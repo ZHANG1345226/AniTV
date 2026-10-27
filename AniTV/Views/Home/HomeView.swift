@@ -48,8 +48,9 @@ final class HomeContentStore: ObservableObject {
             profile = nil
         }
 
-        await loadInitialTrending()
-        await loadContinueWatching(database: database)
+        async let trendingTask: () = loadInitialTrending()
+        async let continueWatchingTask: () = loadContinueWatching(database: database)
+        _ = await (trendingTask, continueWatchingTask)
     }
 
     func loadMoreTrendingIfNeeded(currentItem: HomePosterItem) async {
@@ -270,7 +271,6 @@ struct HomeView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var scrollOffset: CGFloat = 0
     @State private var didResetInitialScroll = false
-    @State private var shouldPreferHeroDefaultFocus = false
     @State private var heroDefaultFocusTask: Task<Void, Never>?
     @State private var preferredHeroFocusTarget: HeroActionButtonFocus = .play
     @State private var isHeroFocused = false
@@ -343,17 +343,14 @@ struct HomeView: View {
                                         preferredFocusTarget: preferredHeroFocusTarget,
                                         onActionFocused: rememberHeroActionFocused,
                                         onFocusChange: { isHeroFocused = $0 },
-                                        prefersDefaultFocus: shouldPreferHeroDefaultFocus
+                                        prefersDefaultFocus: true
                                     )
                                     .frame(maxWidth: proxy.size.width * 0.58, alignment: .leading)
                                     .padding(.leading, 80)
-//                                    .padding(.bottom, 260)
                                     .focusScope(heroFocusScope)
                                     .focusSection()
                                     .transition(.opacity.combined(with: .move(edge: .leading)))
                                 }
-
-
                             }
                             .frame(height: max(540, proxy.size.height * 0.70))
                             .frame(maxWidth: .infinity)
@@ -370,40 +367,43 @@ struct HomeView: View {
                                 .allowsHitTesting(false)
                             }
 
-                            if store.shouldShowContinueWatching {
+                            if !heroStore.isLoading {
+                                if store.shouldShowContinueWatching {
+                                    HomePosterShelfView(
+                                        title: "继续观看",
+                                        items: store.continueWatchingItems,
+                                        isLoading: store.isLoadingContinueWatching,
+                                        availableWidth: proxy.size.width,
+                                        openAnimeDetail: openAnimeDetail,
+                                        onItemAppear: { item in
+                                            Task {
+                                                await store.loadMoreContinueWatchingIfNeeded(
+                                                    currentItem: item,
+                                                    database: database
+                                                )
+                                            }
+                                        },
+                                        showsLoadingTail: store.isLoadingMoreContinueWatching
+                                    )
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
+
                                 HomePosterShelfView(
-                                    title: "继续观看",
-                                    items: store.continueWatchingItems,
-                                    isLoading: store.isLoadingContinueWatching,
+                                    title: "热门条目",
+                                    items: store.trendingItems,
+                                    isLoading: store.isLoadingTrending,
                                     availableWidth: proxy.size.width,
                                     openAnimeDetail: openAnimeDetail,
                                     onItemAppear: { item in
                                         Task {
-                                            await store.loadMoreContinueWatchingIfNeeded(
-                                                currentItem: item,
-                                                database: database
-                                            )
+                                            await store.loadMoreTrendingIfNeeded(currentItem: item)
                                         }
                                     },
-                                    showsLoadingTail: store.isLoadingMoreContinueWatching
+                                    showsLoadingTail: store.isLoadingMoreTrending
                                 )
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .padding(.top, store.shouldShowContinueWatching ? 10 : 0)
+                                .transition(.opacity)
                             }
-
-                            HomePosterShelfView(
-                                title: "热门条目",
-                                items: store.trendingItems,
-                                isLoading: store.isLoadingTrending,
-                                availableWidth: proxy.size.width,
-                                openAnimeDetail: openAnimeDetail,
-                                onItemAppear: { item in
-                                    Task {
-                                        await store.loadMoreTrendingIfNeeded(currentItem: item)
-                                    }
-                                },
-                                showsLoadingTail: store.isLoadingMoreTrending
-                            )
-                            .padding(.top, store.shouldShowContinueWatching ? 10 : 0)
                         }
                         .frame(width: proxy.size.width, alignment: .leading)
                         .padding(.bottom, 80)
@@ -450,7 +450,9 @@ struct HomeView: View {
         .onAppear {
             guard loadTask == nil else { return }
             loadTask = Task {
-                await store.loadIfNeeded(database: database)
+                async let heroTask: () = heroStore.loadIfNeeded(database: database)
+                async let homeTask: () = store.loadIfNeeded(database: database)
+                _ = await (heroTask, homeTask)
                 await MainActor.run {
                     loadTask = nil
                 }
@@ -514,13 +516,7 @@ struct HomeView: View {
     private func resetHeroFocus() {
         heroDefaultFocusTask?.cancel()
         heroDefaultFocusTask = Task { @MainActor in
-            shouldPreferHeroDefaultFocus = true
-            await Task.yield()
-            guard !Task.isCancelled else { return }
             resetFocus(in: heroFocusScope)
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            shouldPreferHeroDefaultFocus = false
             heroDefaultFocusTask = nil
         }
     }

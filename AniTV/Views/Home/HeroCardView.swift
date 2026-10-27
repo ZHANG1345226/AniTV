@@ -40,6 +40,7 @@ struct HeroCardView: View {
 
 struct ActionButtonsView: View {
     @FocusState private var focusedButton: HeroActionButtonFocus?
+    @State private var lastFocusedButton: HeroActionButtonFocus?
     var anime: AnimeSubject
     var playTitle: String = "立即播放"
     var onPlay: () -> Void = {}
@@ -78,7 +79,9 @@ struct ActionButtonsView: View {
                 
                 CircleNavigationButton(
                     systemImage: "info.circle",
-                    onActivate: { openAnimeDetail(anime.id) },
+                    onActivate: {
+                        openAnimeDetail(anime.id)
+                    },
                     focusedButton: $focusedButton,
                     focusTarget: .info,
                     defaultFocusScope: defaultFocusScope,
@@ -108,16 +111,23 @@ struct ActionButtonsView: View {
             guard shouldPrefer else { return }
             restoreDefaultFocusIfNeeded()
         }
-        .onChange(of: focusedButton) { _, newValue in
+        .onChange(of: focusedButton) { oldValue, newValue in
             onFocusChange(newValue != nil)
-            guard let newValue else { return }
+            guard let newValue else {
+                lastFocusedButton = nil
+                return
+            }
 
             if newValue == .previousTrigger {
-                onMoveToPrevious()
+                if oldValue == .play || lastFocusedButton == .play {
+                    onMoveToPrevious()
+                }
+                lastFocusedButton = .play
                 DispatchQueue.main.async {
                     focusedButton = .play
                 }
             } else {
+                lastFocusedButton = newValue
                 onActionFocused(newValue)
             }
         }
@@ -190,7 +200,6 @@ struct UnifiedActionButton: View {
         }
         .buttonStyle(CleanButtonStyle())   // 🎯 使用自定义样式
         .focused(focusedButton, equals: focusTarget)
-        // ❌ 不再需要 .focusEffectDisabled，因为 CleanButtonStyle 已包含
 
         if let defaultFocusScope {
             button.prefersDefaultFocus(prefersDefaultFocus, in: defaultFocusScope)
