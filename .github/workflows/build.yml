@@ -1,0 +1,50 @@
+name: build-ipa
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls /Applications | grep -i '^Xcode' || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "${NEWEST}" ]; then sudo xcode-select -s "${NEWEST}"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i tvos || true
+
+      - name: Apply tolerant-decoding patch
+        run: |
+          echo 'aW1wb3J0IGlvLCBzeXMNCg0KcCA9ICJBbmlUVi9BcGlzL1NlbGVjdG9yL1NlbGVjdG9yU2VhcmNoQ29uZmlnLnN3aWZ0Ig0KcyA9IGlvLm9wZW4ocCwgZW5jb2Rpbmc9InV0Zi04IikucmVhZCgpDQoNCmlmICJ0b2xlcmFudC1pbml0LXYxIiBpbiBzOg0KICAgIHByaW50KCJBTFJFQURZX1BBVENIRUQiKQ0KICAgIHN5cy5leGl0KDApDQoNCmFuY2hvciA9ICcgICAgICAgIHZhciBhZGRIZWFkZXJzVG9WaWRlbzogVmlkZW9IZWFkZXJzID0gVmlkZW9IZWFkZXJzKCknDQppZiBhbmNob3Igbm90IGluIHM6DQogICAgcHJpbnQoIkFOQ0hPUl9OT1RfRk9VTkQiKQ0KICAgIHN5cy5leGl0KDEpDQoNCmluc2VydCA9IGFuY2hvciArICIiIg0KICAgICAgICAvLyB0b2xlcmFudC1pbml0LXYxOiDorqLpmIXnq6/lj6/og73nnIHnlaXlrZfmrrXvvJvlhajpg6jmjInjgIznvLrliJnnlKjlo7DmmI7nmoTpu5jorqTlgLzjgI3op6PnoIENCiAgICAgICAgZW51bSBDb2RpbmdLZXlzOiBTdHJpbmcsIENvZGluZ0tleSB7DQogICAgICAgICAgICBjYXNlIGVuYWJsZU5lc3RlZFVybA0KICAgICAgICAgICAgY2FzZSBtYXRjaE5lc3RlZFVybA0KICAgICAgICAgICAgY2FzZSBtYXRjaFZpZGVvVXJsDQogICAgICAgICAgICBjYXNlIGNvb2tpZXMNCiAgICAgICAgICAgIGNhc2UgYWRkSGVhZGVyc1RvVmlkZW8NCiAgICAgICAgfQ0KDQogICAgICAgIGluaXQoKSB7fQ0KDQogICAgICAgIGluaXQoZnJvbSBkZWNvZGVyOiBEZWNvZGVyKSB0aHJvd3Mgew0KICAgICAgICAgICAgbGV0IGRlZmF1bHRzID0gTWF0Y2hWaWRlb0NvbmZpZygpDQogICAgICAgICAgICBsZXQgYyA9IHRyeSBkZWNvZGVyLmNvbnRhaW5lcihrZXllZEJ5OiBDb2RpbmdLZXlzLnNlbGYpDQogICAgICAgICAgICBlbmFibGVOZXN0ZWRVcmwgPSB0cnkgYy5kZWNvZGVJZlByZXNlbnQoQm9vbC5zZWxmLCBmb3JLZXk6IC5lbmFibGVOZXN0ZWRVcmwpID8/IGRlZmF1bHRzLmVuYWJsZU5lc3RlZFVybA0KICAgICAgICAgICAgbWF0Y2hOZXN0ZWRVcmwgPSB0cnkgYy5kZWNvZGVJZlByZXNlbnQoU3RyaW5nLnNlbGYsIGZvcktleTogLm1hdGNoTmVzdGVkVXJsKSA/PyBkZWZhdWx0cy5tYXRjaE5lc3RlZFVybA0KICAgICAgICAgICAgbWF0Y2hWaWRlb1VybCA9IHRyeSBjLmRlY29kZUlmUHJlc2VudChTdHJpbmcuc2VsZiwgZm9yS2V5OiAubWF0Y2hWaWRlb1VybCkgPz8gZGVmYXVsdHMubWF0Y2hWaWRlb1VybA0KICAgICAgICAgICAgY29va2llcyA9IHRyeSBjLmRlY29kZUlmUHJlc2VudChTdHJpbmcuc2VsZiwgZm9yS2V5OiAuY29va2llcykgPz8gZGVmYXVsdHMuY29va2llcw0KICAgICAgICAgICAgYWRkSGVhZGVyc1RvVmlkZW8gPSB0cnkgYy5kZWNvZGVJZlByZXNlbnQoVmlkZW9IZWFkZXJzLnNlbGYsIGZvcktleTogLmFkZEhlYWRlcnNUb1ZpZGVvKSA/PyBkZWZhdWx0cy5hZGRIZWFkZXJzVG9WaWRlbw0KICAgICAgICB9IiIiDQoNCnMgPSBzLnJlcGxhY2UoYW5jaG9yLCBpbnNlcnQsIDEpDQppby5vcGVuKHAsICJ3IiwgZW5jb2Rpbmc9InV0Zi04Iikud3JpdGUocykNCiMg5ZCM5pe25oqK6YOo572y55uu5qCH5LuOIDI2LjIg6ZmN5YiwIDI2LjDvvIzlhbzlrrkgWGNvZGUgMjYuMC8yNi4xIOeahCBTREsNCnBieCA9ICJBbmlUVi54Y29kZXByb2ovcHJvamVjdC5wYnhwcm9qIg0KdHJ5Og0KICAgIHQgPSBpby5vcGVuKHBieCwgZW5jb2Rpbmc9InV0Zi04IikucmVhZCgpDQogICAgdDIgPSB0LnJlcGxhY2UoIlRWT1NfREVQTE9ZTUVOVF9UQVJHRVQgPSAyNi4yOyIsICJUVk9TX0RFUExPWU1FTlRfVEFSR0VUID0gMjYuMDsiKQ0KICAgIGlmIHQyICE9IHQ6DQogICAgICAgIGlvLm9wZW4ocGJ4LCAidyIsIGVuY29kaW5nPSJ1dGYtOCIpLndyaXRlKHQyKQ0KICAgICAgICBwcmludCgiREVQTE9ZX1RBUkdFVF9MT1dFUkVEIikNCmV4Y2VwdCBFeGNlcHRpb24gYXMgZToNCiAgICBwcmludCgiUEJYX1NLSVAiLCBlKQ0KDQpwcmludCgiUEFUQ0hFRF9PSyIpDQo=' | base64 --decode > /tmp/patch.py
+          python3 /tmp/patch.py
+          grep -n tolerant-init-v1 AniTV/Apis/Selector/SelectorSearchConfig.swift
+
+      - name: Build unsigned IPA
+        run: |
+          set -o pipefail
+          bash scripts/build-user-signable-tvos-ipa.sh 2>&1 | tee /tmp/build.log
+
+      - name: Collect outputs
+        if: always()
+        run: |
+          mkdir -p dist
+          cp /tmp/build.log dist/build.log 2>/dev/null || echo "no build.log" > dist/build.log
+          ls -la scripts/output/user-signable-ipa/ > dist/ipa-listing.txt 2>&1 || true
+          cp scripts/output/user-signable-ipa/*.ipa dist/ 2>/dev/null || echo NO_IPA_PRODUCED > dist/NO_IPA.txt
+
+      - name: Publish release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: AniTV build ${{ github.run_number }}
+          files: dist/*
